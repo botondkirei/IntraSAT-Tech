@@ -1,15 +1,11 @@
 -- Author: Botond Sandor Kirei
 -- Emloyer: Technical University of Cluj Napoca
 -- Scope: IEEE 802.15.4 MAC implementation
---use work.C_like_type_def.all;
+use work.C_like_type_def.all;
 
 package MAC_pack is
 	-- Type definitions
-	-- general type_defs
 	
-	subtype uint8_t is natural range 16#00# to 16#FF#;
-	subtype uint16_t is natural range 16#0000# to 16#FFFF#;
-	subtype uint32_t is natural ;
 	-- constants
 	-- command types
 	constant TYPE_BEACON : uint8_t := 0;
