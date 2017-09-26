@@ -131,7 +131,29 @@ package MAC_pack is
 		MFR : uint16_t;
 	end record;
 
-
+	type GTSinfoEntryType is record
+		GTS_id : uint8_t;
+		starting_slot : uint8_t;
+		len : uint8_t;
+		direction :uint8_t;
+		DevAddrType : uint32_t;
+	end record;
+	
+	type GTSinfoEntryType_null is record
+		GTS_id : uint8_t;
+		starting_slot : uint8_t;
+		len : uint8_t;
+		DevAddrType : uint32_t;
+		persistencetime : uint8_t;
+	end record;
+	
+	type gts_slot_element is record
+		element_count : uint8_t;
+		element_in : uint8_t;
+		element_out : uint8_t;
+	end record;
+	
+	constant GTS_db_size : integer :=  7;
 	
 end package;
 

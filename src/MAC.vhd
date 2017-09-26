@@ -82,9 +82,9 @@ package MAC is
 	
 	--initialization functions
 	procedure init_gts_slot_list();
-	procedure init_GTS_null_db();
+	procedure init_GTS_null_db(GTS_null_db : inout array (0 to GTS_db_size) of GTSinfoEntryType);;
 	
-	procedure init_GTS_db();
+	procedure init_GTS_db(GTS_db : inout array (0 to GTS_db_size) of GTSinfoEntryType);;
 
 
 	function calculate_gts_expiration return uint32_t;
@@ -238,7 +238,136 @@ package body MAC is
 	end procedure create_beacon_request_cmd;
 	
 	
+	-- Syncornization functions implementations
 
+	-- GTS function implementations
+	
+	-- procedure process_gts_request(MPDU : MPDU_t);	
+	procedure init_available_gts_index( available_gts_index_count  : uint8_t;
+										available_gts_index : array (0 to GTS_SEND_BUFFER_SIZE) of uint8_t);
+		variable i : integer :=0;
+	begin
+		available_gts_index_count  := GTS_SEND_BUFFER_SIZE;
+		for i in 0 to GTS_SEND_BUFFER_SIZE loop
+			available_gts_index[i] := i;
+		end loop;
+	end procedure;
+	-- procedure start_coordinator_gts_send(SendBuffer : out SendBuffer_t);
+	
+	
+	--GTS FUNCTIONS
+	-- function remove_gts_entry( DevAddressType : DevAddressType_t) return error_t;
+	-- function add_gts_entry( gts_length : uint8_t;
+							-- direction : boolean;
+							-- DevAddressType : DevAddressType_t) return error_t;
+	-- function add_gts_null_entry(gts_length : uint8_t;
+							-- direction : boolean;
+							-- DevAddressType : DevAddressType_t) return error_t;
+	
+	-- --increment the idle GTS for GTS deallocation purposes, not fully implemented yet
+	
+	-- procedure increment_gts_null;
+	
+	-- procedure start_gts_send;
+	
+	
+	
+	-- --initialization functions
+	procedure init_gts_slot_list(gts_slot_list : inout array (0 to GTS_db_size ) of gts_slot_element);
+		variable i: integer:=0;
+	begin
+		for i in 0 to GTS_db_size loop
+			gts_slot_list[i].element_count :=16#00#;
+			gts_slot_list[i].element_in :=16#00#;
+			gts_slot_list[i].element_out :=16#00#;
+		end loop;
+	end procedure;		
+	 
+	procedure init_GTS_null_db(GTS_db_null : inout array (0 to GTS_db_size) of GTSinfoEntryType_null);
+		variable i: integer:=0;
+	begin
+		for i in 0 to GTS_db_size loop
+			GTS_db_null[i].gts_id:=16#00#;
+			GTS_db_null[i].starting_slot:=16#00#;
+			GTS_db_null[i].len:=16#00#;
+			GTS_db_null[i].DevAddressType:=16#0000#;
+			GTS_db_null[i].persistencetime := 16#00#;
+		end loop;
+	end procedure;	
+	procedure init_GTS_db (GTS_db : inout array (0 to GTS_db_size) of GTSinfoEntryType);
+		variable i: integer:=0;
+	begin
+		for i in 0 to GTS_db_size loop
+			GTS_db[i].gts_id:=16#00#;
+			GTS_db[i].starting_slot:=16#00#;
+			GTS_db[i].len:=16#00#;
+			GTS_db[i].direction:=16#00#;
+			GTS_db[i].DevAddressType:=16#0000#;
+		end loop;
+	end procedure;
+
+
+	-- function calculate_gts_expiration return uint32_t;
+	-- procedure check_gts_expiration;
+
+	-- -- scan functions
+	
+	-- procedure data_channel_scan_indication;
+	
+	-- -- CSMA functions
+	
+	-- function check_csma_ca_backoff_send_conditions( delay_backoffs : uint32_t) return uint8_t;
+	
+	-- procedure init_csma_ca( slotted : boolean);
+	-- procedure perform_csma_ca;
+	-- procedure perform_csma_ca_unslotted();
+	-- procedure perform_csma_ca_slotted();
+	
+	-- -- indirect transmission commands
+	-- --function used to initialize the indirect transmission buffer
+	-- procedure init_indirect_trans_buffer;
+	-- --function used to search and send an existing indirect transmission message
+	-- procedure send_ind_trans_addr( DeviceAddress : uint32_t);
+	-- --function used to remove an existing indirect transmission message
+	-- function remove_indirect_trans( handler : uint8_t) return error_t;
+	-- --function used to increment the transaction persistent time on each message
+	-- --if the transaction time expires the messages are discarded
+	-- procedure increment_indirect_trans;
+
+	-- -- receive buffer commands
+	
+	-- procedure data_indication();
+	
+	-- procedure indication_cmd(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+	-- procedure indication_ack(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+	-- procedure indication_data(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+	
+	-- --- reception and transmission
+	
+	-- procedure send_frame_csma;
+	
+	-- function check_csma_ca_send_conditions( frame_length : uint8_t ;
+											 -- frame_control1 : uint8_t) return uint8_t;
+
+	-- function check_gts_send_conditions( frame_length : uint8_t) return uint8_t;
+	
+	-- function calculate_ifs( pk_length : uint8_t) return uint8_t;
+
+	-- -- beacon management functions
+	
+	-- --function to create the beacon
+	-- procedure create_beacon();
+	-- --function to process the beacon information
+	-- procedure  process_beacon(PDU : MPDU_t; ppduLinkQuality : uint8_t );
+
+	-- -- fault tolerance commands
+	
+		
+	-- procedure create_coordinator_realignment_cmd( device_extended0 : uint32_t;
+												 -- device_extended1 : uint32_t;
+												  -- device_short_address :uint16_t);
+	-- procedure create_orphan_notification;
+	-- procedure process_coordinator_realignment(MPDU_ptr : access MPDU_t);
 
 	function SerializeFrameControl_t (Frame : FrameControl_t) return uint16_t is
 		variable RetVal : uint16_t :=0;
@@ -324,14 +453,14 @@ package body MAC is
 		--  signal final_CAP_slot : uint8_t :=15;
 		
 		-- //GTS descriptor variables, coordinator usage only
-		-- GTSinfoEntryType GTS_db[7];
+		-- GTS_db : array (0 to GTS_db_size) of GTSinfoEntryType ;
 		-- signal GTS_descriptor_count : uint8_t :=0;
 		-- signal GTS_startslot : uint8_t :=16;
 		-- signal GTS_id : uint8_t :=16#01#;
 
 
 		-- //null gts descriptors
-		-- GTSinfoEntryType_null GTS_null_db[7];
+		--  GTS_null_db : array (0 to GTS_db_size) of GTSinfoEntryType_null;
 		
 		--  GTS_null_descriptor_count : uint8_t :=0;
 		-- //uint8_t GTS_null_id=0x01;
@@ -358,7 +487,7 @@ package body MAC is
 		-- signal allow_gts : uint8_t :=1;
 		
 		-- //COORDINATOR GTS BUFFER 	
-		-- gts_slot_element gts_slot_list[7];
+		-- gts_slot_list:  array (0 to GTS_db_size) of gts_slot_element;
 		-- uint8_t available_gts_index[GTS_SEND_BUFFER_SIZE];
 		-- signal available_gts_index_count : uint8_t;
 		
