@@ -23,23 +23,26 @@ package MAC_pack is
 
 	--MAC specific type_defs
 	type impl_req is (mandatory, optional);
-	type SrcAddrMode_t is (NO_ADDRESS, SHORT_ADDRESS, EXTENDED_ADDRESS); --The source addressing mode for this MPDU.
-	type DstAddrMode_t is (NO_ADDRESS, SHORT_ADDRESS, EXTENDED_ADDRESS); --The destination addressing mode for this MPDU.
+	type SrcAddrMode_t is (NO_ADDRESS, ADDRESS, EXTENDED_ADDRESS); --The source addressing mode for this MPDU.
+	--attribute enumaretion_encoding of SrcAddrMode_t : type is "1 2 3";
+	type DstAddrMode_t is (NO_ADDRESS, ADDRESS, EXTENDED_ADDRESS); --The destination addressing mode for this MPDU.
 	subtype DstPANId_t is uint16_t ;  --The PAN identifier of the entity to which the MSDU is being transferred.
 	type DstAddr_t is range 0 to 10 ; -- to be completed - page 117
 -- primitive definitions
 	constant aMaxPHYPacketSize : integer := 127;
 	constant aMinMPDUOverhead: integer := 9;
-	constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMaxMACPayloadSize;
+	--constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMaxMACPayloadSize;
+	constant aMaxMACPayloadSize : integer;
 	type UWBPRF_t is (PRF_OFF, NOMINAL_4_M, NOMINAL_16_M, NOMINAL_64_M);
 	type Ranging is (NON_RANGING, ALL_RANGING, PHY_HEADER_ONLY);
-	type UWBPreambleSymbolRepetitions_t is (0, 16, 64, 1024, 4096);
+	--type UWBPreambleSymbolRepetitions_t is (0, 16, 64, 1024, 4096);
 	type MCPS_DATA_request_t is record
 		SrcAddrMode : SrcAddrMode_t;
 		DstAddrMode:DstAddrMode_t;
 		DstPANId : DstPANId_t;
 		DsrAddr : integer; -- to be implemeneted pg. 117
-		msduLength: integer := aMaxMACPayloadSize;
+		--msduLength: integer := aMaxMACPayloadSize;
+		msduLength: integer;
 		-- msdu : 
 		msduHandle : uint8_t;
 		AckTX : boolean;
@@ -82,7 +85,7 @@ package MAC_pack is
 	type uint8x14_t is  array (0 to 13) of uint8_t;
 	type uint8x128_t is  array (0 to 127) of uint8_t;
 	type DestinationPANIndetifier_t is record
-		none : boolean;
+		len : boolean;
 		short : uint8x2_t;
 	end record DestinationPANIndetifier_t;
 	type DestinationAddress_t is record
@@ -111,23 +114,31 @@ package MAC_pack is
 		DestinationPANIndetifier : DestinationPANIndetifier_t;
 		DestinationAddress: DestinationAddress_t;
 		SourcePANIndetifier : SourcePANIndetifier_t;
-		SourcePANIndetifie : SourcePANIndetifier_t;
-		
+		SourceAddress : SourceAddress_t;
 	end record;
 	
-	type MHR_t is record
-		FrameControl : uint16_t;
-		--frame_control_2 : uint8_t;
-		SequenceNumber : uint8_t;
-		AddressingFields:AddressingFields_t;
-		AuxiliarySecurityHeader : AuxiliarySecurityHeader_t;
-		--data : uint8x128_t;
-	end record MHR_t;
-
+	type FrameControl_t is record
+		FrameType: integer range 0 to 7;
+		SecEn: integer range 0 to 1;
+		FramePending: integer range 0 to 1;
+		AR: integer range 0 to 1;
+		PANIdCompression: integer range 0 to 1;
+		Reserved : integer range 0 to 7;
+		DestAddrMode : integer range 0 to 3;
+		FrameVer : integer range 0 to 3;
+		SrcAddrMode : integer range 0 to 3;
+	end record FrameControl_t;
+	
 	type MPDU_t is record
 		MHR : MHR_t;
 		MACPayload : uint8x128_t;
 		MFR : uint16_t;
 	end record;
+
+
 	
 end package;
+
+package body MAC_pack is
+	constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMaxMACPayloadSize;
+end package body MAC_pack;
