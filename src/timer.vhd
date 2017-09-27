@@ -23,7 +23,7 @@ package Timer is
 		procedure set_enable_backoffs (enable : boolean);
 		procedure set_timers_enable ( timer : uint8_t);
 		procedure reset_process_frame_tick_counter;
-		procedure reset_start(start_ticks:	uint32_t);
+		function reset_start(start_ticks:	uint32_t) return uint8_t;
 		--time before BI
 		function before_bi_fired return boolean;
 		function sd_fired return boolean;
@@ -164,7 +164,7 @@ package body Timer is
 			process_frame_tick_counter :=0;
 		end procedure;
 		
-		procedure reset_start(start_ticks:	uint32_t);
+		function reset_start(start_ticks:	uint32_t) return uint8_t;
 		begin
 			current_time_slot := start_ticks / time_slot_ticks;
 			
@@ -184,6 +184,7 @@ package body Timer is
 			
 			total_tick_counter := total_tick_counter + start_ticks;
 			ticks_counter := start_ticks;
+			return current_time_slot;
 		end procedure;
 		
 		procedure fired;

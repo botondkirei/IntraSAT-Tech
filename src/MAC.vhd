@@ -37,19 +37,19 @@ package MAC is
 	
 	procedure create_association_request_cmd( CoordAddrMode: uint8_t;
 											CoordPANId : uint16_t;
-											CoordAddress : uint32_t
-											 CapabilityInformation : uint8_t;
+											CoordAddress : uint32_t;
+											CapabilityInformation : uint8_t;
 											SendBuffer : out SendBuffer_t );
 											
 
-	function create_association_response_cmd( DeviceAddress: uint32_t
+	function create_association_response_cmd( DeviceAddress: uint32_t;
 											 shortaddress: uint16_t;
 											 status : uint8_t;
 											 SendBuffer : out SendBuffer_t) 
 											 return error_t;
 											 
 	procedure create_disassociation_notification_cmd( DeviceAddress: uint32_t;
-													 disassociation_reason : uint8_t
+													 disassociation_reason : uint8_t;
 													  SendBuffer : out SendBuffer_t);
 	
 	procedure process_dissassociation_notification(MPDU: MPDU_t);
@@ -81,7 +81,7 @@ package MAC is
 	
 	
 	--initialization functions
-	procedure init_gts_slot_list();
+	procedure init_gts_slot_list;
 	procedure init_GTS_null_db(GTS_null_db : inout array (0 to GTS_db_size) of GTSinfoEntryType);;
 	
 	procedure init_GTS_db(GTS_db : inout array (0 to GTS_db_size) of GTSinfoEntryType);;
@@ -117,7 +117,7 @@ package MAC is
 
 	-- receive buffer commands
 	
-	procedure data_indication();
+	procedure data_indication;
 	
 	procedure indication_cmd(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
 	procedure indication_ack(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
@@ -347,7 +347,68 @@ package body MAC is
 
 	-- -- receive buffer commands
 	
-	-- procedure data_indication();
+	 procedure data_indication()
+		signal link_qual : uint8_t ;
+	 begin
+		link_qual <= link_quality;
+		--Although the receiver of the device is enabled during the channel assessment portion of this algorithm, the
+		--device shall discard any frames received during this time.
+		--////////////printfUART("performing_csma_ca: %i\n",performing_csma_ca);
+		if (performing_csma_ca = 1) then
+			--////////////printfUART("REJ CSMA\n","");
+			buffer_count <= buffer_count - 1;
+			current_msg_out <= current_msg_out + 1;
+			if ( current_msg_out = RECEIVE_BUFFER_SIZE )then
+				current_msg_out <= 0;
+			end if;
+			
+			return;
+		end if;
+		if ( scanning_channels = 1) then
+			buffer_count <= buffer_count - 1;
+			current_msg_out <= current_msg_out + 1;
+			if ( current_msg_out = RECEIVE_BUFFER_SIZE )then
+				current_msg_out <= 0;
+			end if;
+			return;
+		end if;
+		
+		--//////printfUART("data ind %x %x %i\n",buffer_msg[current_msg_out].frame_control1,buffer_msg[current_msg_out].frame_control2,(buffer_msg[current_msg_out].frame_control2 & 0x7));
+		
+		--check the frame type of the received packet
+		case( (buffer_msg[current_msg_out].frame_control1 & 0x7) )
+			
+				when TYPE_DATA=> --////printfUART("rd %i\n",buffer_msg[current_msg_out].seq_num);
+								indication_data(&buffer_msg[current_msg_out],link_qual);
+								
+				when TYPE_ACK=> --////printfUART("ra\n","");
+								--//ack_received = 1;
+								indication_ack(&buffer_msg[current_msg_out],link_qual);
+							
+				when TYPE_CMD=> -- ////printfUART("rc\n","");
+								indication_cmd(&buffer_msg[current_msg_out],link_qual);
+			
+				when TYPE_BEACON=>
+								
+								--//printfUART("rb %i\n",buffer_msg[current_msg_out].seq_num);
+								if (mac_PIB.macShortAddress = 0x0000) then
+									buffer_count <= buffer_count - 1;
+								else
+									process_beacon(&buffer_msg[current_msg_out],link_qual);
+								end if;
+				others=> 
+							atomic buffer_count <= atomic buffer_count-1;
+							--//////printfUART("Invalid frame type\n","");
+
+			end case;
+		current_msg_out <= current_msg_out +1;
+		if ( current_msg_out = RECEIVE_BUFFER_SIZE )	then
+			current_msg_out <= 0;
+		end if;
+		
+	end procedure;
+	
+
 	
 	-- procedure indication_cmd(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
 	-- procedure indication_ack(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
@@ -369,8 +430,267 @@ package body MAC is
 	-- --function to create the beacon
 	-- procedure create_beacon();
 	-- --function to process the beacon information
-	-- procedure  process_beacon(PDU : MPDU_t; ppduLinkQuality : uint8_t );
+	 procedure  process_beacon(packet : MPDU_t; ppduLinkQuality : uint8_t );
+		-- ORGANIZE THE PROCESS BEACON FUNCION AS FOLLOWS.
+		-- 1- GET THE BEACON ORDER
+		-- 2- GET THE SUPERFRAME ORDER
+		-- 3- GET THE FINAL CAP SLOT
+		-- 4 - COMPUTE SD, BI, TS, BACKOFF PERIOD IN MILLISECONDS
+		
+		-- 4- SYNCHRONIZE THE NODE BY DOING THE FOLLOWING
+			-- - SET A TIMER IN MS FOR THE FINAL TIME SLOT (SUPERFRAME DURATION) : IT EXPRIES AFTER SD - TX TIME - PROCESS TIME
+			-- - SET A TIMER IN MS FOR THE GTS IF ANY EXIST IT EXPRIES AFTER GTS_NBR * TIME_SLOT - TX TIME - PROCESS TIME 
+		signal SO_EXPONENT : uint32_t ;
+		signal BO_EXPONENT : uint32_t ;
+		signal i : integer :=0;
+		signal gts_descriptor_addr : uint16_t;
+		signal data_count : uint8_t;
+		signal gts_directions: uint8_t;
+		signal gts_des_count : uint8_t;
+		signal gts_ss	:  uint8_t;
+		signal gts_l	:  uint8_t;
+		signal dir		:  uint8_t;
+		signal dir_mask	:  uint8_t;	
+		--function that processes the received beacon
+		signal  beacon_ptr : access beacon_addr_short;
+		signal  pan_descriptor : PANDescriptor;
+		--pending frames
+		signal short_addr_pending	: uint8_t :=0;
+		signal long_addr_pending	: uint8_t :=0;
+	begin
+		--used in the track beacon
+		beacon_processed <= 1;
+		missed_beacons <=0;
+		
+		--initializing pointer to data structure
+		beacon_ptr = (beacon_addr_short*) (packet->data);
+		
+		
+		--decrement buffer count
+		buffer_count <= buffer_count -1;
+		
+		-- drop packet if not in PAN
+		--////printfUART("Received Beacon\n","");
+		--////printfUART("rb panid: %x %x \n",beacon_ptr->source_address,mac_PIB.macCoordShortAddress);
+		--////////printfUART("My macPANID: %x\n",mac_PIB.macPANId);
+		
+		if( beacon_ptr->source_address != mac_PIB.macCoordShortAddress) then
+			return;
+		end if;
+		
+		-- /**********************************************************************************/
+		-- /*					PROCESSING THE SUPERFRAME STRUCTURE							  */
+		-- /**********************************************************************************/
+		
+		if (PANCoordinator = 0) then
+			mac_PIB.macBeaconOrder := get_beacon_order(beacon_ptr->superframe_specification);
+			mac_PIB.macSuperframeOrder := get_superframe_order(beacon_ptr->superframe_specification);
+			
+			--mac_PIB.macCoordShortAddress = beacon_ptr->source_address;
+			
+			--////printfUART("BO,SO:%i %i\n",mac_PIB.macBeaconOrder,mac_PIB.macSuperframeOrder);
+			
+			--//mac_PIB.macPANId = beacon_ptr->source_PAN_identifier;
+			
+			--//beacon order check if it changed
+			if (mac_PIB.macSuperframeOrder = 0) then
+				SO_EXPONENT <= 1;
+			else
+				SO_EXPONENT <= powf(2,mac_PIB.macSuperframeOrder);
+			end if;
+			
+			if ( mac_PIB.macBeaconOrder =0) then
+				BO_EXPONENT <=1;
+			else
+					BO_EXPONENT <= powf(2,mac_PIB.macBeaconOrder);
+			end if;
+			BI <= aBaseSuperframeDuration * BO_EXPONENT; 
+			SD <= aBaseSuperframeDuration * SO_EXPONENT; 
+			
+			--backoff_period
+			backoff <= aUnitBackoffPeriod;
+			time_slot <= SD / NUMBER_TIME_SLOTS;
+			
+			TimerAsync.set_bi_sd(BI,SD);
+		end if;	
+		
+		--/**********************************************************************************/
+		--/*							PROCESS GTS CHARACTERISTICS							  */
+		--/**********************************************************************************/
+		allow_gts <=1;
+	
+		--initializing the gts variables
+		s_GTSss<=0;
+		s_GTS_length<=0;
+		
+		r_GTSss<=0;
+		r_GTS_length<=0;
+		
 
+		final_CAP_slot <= 15;
+
+
+		gts_des_count <= (packet->data[8] & 0x0f);
+		
+		data_count <= 9;
+		
+		final_CAP_slot <= 15 - gts_des_count;
+		
+		if (gts_des_count > 0 ) then
+			data_count <= 10; --position of the current data count
+			--process descriptors
+		
+			gts_directions <= packet->data[9];
+			
+			--////printfUART("gts_directions:%x\n",gts_directions);
+			
+			for i in 0 to gts_des_count loop
+				gts_descriptor_addr <= (uint16_t) packet->data[data_count];
+					
+				--////printfUART("gts_des_addr:%x mac short:%x\n",gts_descriptor_addr,mac_PIB.macShortAddress);
+				
+				data_count <= data_count+2;
+				--check if it concerns me
+				if (gts_descriptor_addr = mac_PIB.macShortAddress) then
+					-- //confirm the gts request
+					-- //////////////printfUART("packet->data[data_count]: %x\n",packet->data[data_count]);
+					-- //gts_ss = 15 - get_gts_descriptor_ss(packet->data[data_count]);
+					gts_ss <= get_gts_descriptor_ss(packet->data[data_count]);
+					gts_l <= get_gts_descriptor_len(packet->data[data_count]);
+
+					if ( i = 0 ) then
+						dir_mask <= 1;
+					else
+							dir_mask = powf(2,i);
+					end if;
+					--//////////////printfUART("dir_mask: %x i: %x gts_directions: %x \n",dir_mask,i,gts_directions);
+					dir <= ( gts_directions & dir_mask);
+					if (dir = 0) then
+						s_GTSss<=gts_ss;
+						s_GTS_length<=gts_l;
+					else
+						r_GTSss=gts_ss;
+						r_GTS_length=gts_l;
+					end if;
+					
+					--////printfUART("PB gts_ss: %i gts_l: %i dir: %i \n",gts_ss,gts_l,dir);
+					--//////////////printfUART("PB send_s_GTSss: %i send_s_GTS_len: %i\n",send_s_GTSss,send_s_GTS_len);
+					
+					if ( gts_l = 0 ) then
+						allow_gts<=0;
+					end if;
+
+					if (gts_confirm = 1 and gts_l != 0) then
+						--signal ok
+						--///printfUART("gts confirm \n","");
+						gts_confirm <=0;
+						MLME_GTS.confirm(GTS_specification,MAC_SUCCESS);
+					else
+						--//signal not ok
+						--//////////////printfUART("gts not confirm \n","");
+						gts_confirm <=0;
+						MLME_GTS.confirm(GTS_specification,MAC_DENIED);
+					end if;
+					
+				end if;
+				data_count <= data_count +1;	
+			end loop;
+		end if;
+		
+		--/**********************************************************************************/
+		--/*							PROCESS PENDING ADDRESSES INFORMATION				  */
+		--/**********************************************************************************/	
+		--//this should pass to the network layer
+		
+		
+		short_addr_pending<=get_number_short(packet->data[data_count]);
+		long_addr_pending<=get_number_extended(packet->data[data_count]);
+		
+		--////////////printfUART("ADD COUNT %i %i\n",short_addr_pending,long_addr_pending);
+		
+		data_count <= data_count +1;
+		
+		if(short_addr_pending > 0) then
+		{
+			for i in 0 to short_addr_pending loop
+				--////////////printfUART("PB %i %i\n",(uint16_t)packet->data[data_count],short_addr_pending);
+				
+				--//if(packet->data[data_count] == (uint8_t)mac_PIB.macShortAddress && packet->data[data_count+1] == (uint8_t)(mac_PIB.macShortAddress >> 8) )
+				if((uint16_t)packet->data[data_count] = mac_PIB.macShortAddress) then
+					create_data_request_cmd();
+				end if;
+				data_count = data_count + 2;
+			end loop;
+		end if;
+		if(long_addr_pending > 0) then
+			for i in 0 to long_addr_pending loop
+				if((uint32_t)packet->data[data_count] == aExtendedAddress0 && (uint32_t)packet->data[data_count + 4] == aExtendedAddress1) then	
+					data_count = data_count + 8;
+				end if;
+			end loop;
+		end if;
+			
+		--**********************************************************************************/
+		--*				BUILD the PAN descriptor of the COORDINATOR						  */
+		--**********************************************************************************/
+			
+		
+	   --Beacon NOTIFICATION
+	   --BUILD the PAN descriptor of the COORDINATOR
+		--assuming that the adress is short
+		pan_descriptor.CoordAddrMode <= SHORT_ADDRESS;
+		pan_descriptor.CoordPANId <= 16#0000#;--beacon_ptr->source_PAN_identifier;
+		pan_descriptor.CoordAddress0<=16#00000000#;
+		pan_descriptor.CoordAddress1<=mac_PIB.macCoordShortAddress;
+		pan_descriptor.LogicalChannel<=current_channel;
+		--superframe specification field
+		pan_descriptor.SuperframeSpec <= beacon_ptr->superframe_specification;
+		
+		pan_descriptor.GTSPermit<=mac_PIB.macGTSPermit;
+		pan_descriptor.LinkQuality<=16#00#;
+		pan_descriptor.TimeStamp<=16#000000#;
+		pan_descriptor.SecurityUse<=0;
+		pan_descriptor.ACLEntry<=16#00#;
+		pan_descriptor.SecurityFailure=>16#00#;
+	   
+		--I_AM_IN_CAP = 1;
+	   
+		--/**********************************************************************************/
+		--/*								SYNCHRONIZING									  */
+		--/**********************************************************************************/
+		--
+		if(PANCoordinator == 0) then
+			I_AM_IN_CAP <= 1;
+			I_AM_IN_IP <= 0;
+			
+			
+			if(findabeacon = 1) then
+				--////printfUART("findabeacon\n", "");
+				TimerAsync.set_timers_enable(1);
+				findabeacon =0;
+			end if;
+			
+			-- //#ifdef PLATFORM_MICAZ
+			-- //number_time_slot = call TimerAsync.reset_start(start_reset_ct+process_tick_counter+52);// //SOBI=3 52 //SOBI=0 15
+			-- //#else
+			
+			-- //call TimerAsync.reset();
+			
+			number_time_slot <=  TimerAsync.reset_start(75);   --95 old val sem print
+					
+			-- // +process_tick_counter+52 //SOBI=3 52 //SOBI=0 
+			-- //#endif
+			on_sync<=1;
+			
+			--////printfUART("sED\n", "");
+		end if;	
+		signal MLME_BEACON_NOTIFY.indication((uint8_t)packet->seq_num,pan_descriptor,0, 0, mac_PIB.macBeaconPayloadLenght, packet->data);
+			
+	end procedure;
+	
+	
+	
+	
 	-- -- fault tolerance commands
 	
 		
@@ -436,7 +756,7 @@ package body MAC is
 		-- signal beacon_loss_reason : uint8_t;
 		
 		-- //(SYNC)the device will try to locate one beacon
-		-- signal findabeacon : bool :=0;
+		signal findabeacon : boolean := FALSE;
 		-- //(SYNC)number of beacons lost before sending a Beacon-Lost indication comparing to aMaxLostBeacons
 		-- signal missed_beacons : uint8_t :=0;
 		-- //boolean variable stating if the device is synchonized with the beacon or not
@@ -595,28 +915,358 @@ package body MAC is
 		-- signal ackwait_period : uint8_t;
 		
 		-- signal link_quality : uint8_t;
-		
-		-- signal  mac_ack : ACK;
-		-- signal  mac_ack_ptr : access ACK;
+		type ACK_ptr is access ACK_t
+		signal  mac_ack : ACK_t;
+		signal  mac_ack_ptr :  ACK_ptr;
 		
 		-- signal gts_expiration : uint32_t;
 
-		-- signal I_AM_IN_CAP	: uint8_t :=0;
+		signal I_AM_IN_CAP	: uint8_t :=0;
 		-- signal I_AM_IN_CFP	: uint8_t :=0;
-		-- signal I_AM_IN_IP	: uint8_t :=0;
+		signal I_AM_IN_IP	: uint8_t :=0;
 		
 		-- beacon management signal and variables
-		
-		-- signal  mac_beacon_txmpdu : MPDU;
-		-- signal  mac_beacon_txmpdu_ptr : access MPDU;
+		type MPDU_ptr is access MPDU_t;
+		signal  mac_beacon_txmpdu : MPDU_t;
+		signal  mac_beacon_txmpdu_ptr : access MPDU_ptr;
 		
 		-- signal send_beacon_frame_ptr : access uint8_t;
 		-- signal send_beacon_length : uint8_t;
 		                                  
 
-	-- begin
+	 begin
 		-- MCPS_DATA.request.SrcAddrMode <= NO_ADDRESS;
-	-- end architecture MAC_core;
+		
+		reset : process
+		begin
+			init_MacPIB();
+			init_GTS_db();
+			init_GTS_null_db();
+			init_gts_slot_list();
+			init_available_gts_index();
+			aExtendedAddress0=TOS_NODE_ID;
+			aExtendedAddress1=TOS_NODE_ID;
+			AddressFilter.set_address(mac_PIB.macShortAddress, aExtendedAddress0, aExtendedAddress1);
+			AddressFilter.set_coord_address(mac_PIB.macCoordShortAddress, mac_PIB.macPANId);
+			init_indirect_trans_buffer();
+			mac_beacon_txmpdu_ptr := new MPDU_t'(mac_beacon_txmpdu);
+			mac_ack_ptr := new ACK_t'(mac_ack);
+			ackwait_period := ((mac_PIB.macAckWaitDuration * 4.0 ) / 250.0) * 3;
+			response_wait_time := ((aResponseWaitTime * 4.0) / 250.0) * 2;
+		
+			BI := aBaseSuperframeDuration * powf(2,mac_PIB.macBeaconOrder);
+			SD := aBaseSuperframeDuration * powf(2,mac_PIB.macSuperframeOrder);
+			
+			
+			--backoff_period
+			backoff := aUnitBackoffPeriod;
+			--backoff_period_boundary
+			
+			time_slot := SD / NUMBER_TIME_SLOTS;
+			
+			TimerAsync.set_enable_backoffs(1);	
+			TimerAsync.set_backoff_symbols(backoff);
+			TimerAsync.set_bi_sd(BI,SD);
+			TimerAsync.start();
+			wait;
+		end process;
+		
+		TimerAsync_before_bi_fired : process (TimerAsync.before_bi_fired)
+		begin
+		
+			if (mac_PIB.macBeaconOrder != mac_PIB.macSuperframeOrder ) then
+				if ( Beacon_enabled_PAN = 1 ) then
+					trx_status <= PHY_TX_ON;
+					PLME_SET_TRX_STATE.request(PHY_TX_ON);
+				else
+					trx_status = PHY_RX_ON;
+					PLME_SET_TRX_STATE.request(PHY_RX_ON);
+				end if;
+			end if;
+			findabeacon <= TRUE;
+		end process;
+		
+		TimerAsync_bi_fired : process ( TimerAsync.bi_fired)
+		begin
+			I_AM_IN_CAP <= 1;
+			I_AM_IN_IP <= 0;
+			if ( Beacon_enabled_PAN = 1 ) then
+				PD_DATA.request(send_beacon_length,send_beacon_frame_ptr);
+			end if;
+			number_backoff <=0;
+			number_time_slot<=0;
+			if (TrackBeacon == 1) then
+				if (beacon_processed=1) then
+					beacon_processed <=0;
+				else 
+					on_sync =0;
+					beacon_loss_reason = MAC_BEACON_LOSS;
+					--TODO
+					--post signal_loss();
+				end if;
+			end if;
+		send_frame_csma();					
+		end process;
+		
+		TimerAsync_sd_fired process(TimerAsync.sd_fired);
+		begin
+			I_AM_IN_CFP <= 0;
+			I_AM_IN_IP <= 1;
+			
+			
+			number_backoff <=0;
+			number_time_slot <=0;
+			
+			
+			if (PANCoordinator = 0 and TYPE_DEVICE == ROUTER) then
+				trx_status = PHY_RX_ON;
+				PLME_SET_TRX_STATE.request(PHY_RX_ON);
+			else
+				trx_status = PHY_RX_ON;
+				PLME_SET_TRX_STATE.request(PHY_RX_ON);
+			end if;
+			
+			if (mac_PIB.macShortAddress=0xffff and TYPE_DEVICE == END_DEVICE) then
+				trx_status = PHY_RX_ON;
+				PLME_SET_TRX_STATE.request(PHY_RX_ON);
+			end if;
+			
+			if (PANCoordinator = 1) then
+				--increment the gts_null descriptors
+						--if (GTS_null_descriptor_count > 0) post increment_gts_null();
+						--if (GTS_descriptor_count >0 ) post check_gts_expiration();
+						--if (indirect_trans_count > 0) increment_indirect_trans();
+						--creation of the beacon
+						create_beacon();
+			
+				--trx_status = PHY_TRX_OFF;
+				--post set_trx();
+			
+			else
+			--temporariamente aqui //aten��o quando for para o cluster-tree � preciso mudar para fora
+			--e necessario destinguir ZC de ZR (que tem que manter a sync com o respectivo pai)
+				if (on_sync = 0) then
+				--sync not ok
+				--findabeacon=1;
+					if (missed_beacons = aMaxLostBeacons) then
+						--out of sync
+						 signal_loss();
+					end if;
+					missed_beacons <= missed_beacons + 1;
+				else
+					--sync ok
+					missed_beacons <=0;
+					on_sync <=0;
+				end if;
+			end if;
+		end process;
+		
+		TimerAsync_before_time_slot_fired : process (TimerAsync.before_time_slot_fired);
+		begin 
+			on_s_GTS <=0;
+			on_r_GTS <=0;
+			
+			if (next_on_s_GTS = 1) then	
+				on_s_GTS <=1;
+				next_on_s_GTS <=0;
+				trx_status <= PHY_TX_ON;
+				PLME_SET_TRX_STATE.request(PHY_TX_ON);
+				--post set_trx();
+			end if;
+			
+			if (next_on_r_GTS = 1) then
+				on_r_GTS <=1;
+				next_on_r_GTS <=0;
+				trx_status <= PHY_RX_ON;
+				PLME_SET_TRX_STATE.request(PHY_RX_ON);
+				--post set_trx();
+			end if;
+		end process;
+			
+		TimerAsync_time_slot_fired : process (TimerAsync.time_slot_fired);
+		begin
+			--reset the backoff counter and increment the slot boundary
+			number_backoff <=0;
+			number_time_slot <= number_time_slot;
+			--verify is there is data to send in the GTS, and try to send it
+			if (PANCoordinator = 1 and GTS_db[15-number_time_slot].direction = 1 and GTS_db[15-number_time_slot].gts_id != 0) then
+				--COORDINATOR SEND DATA
+				start_coordinator_gts_send();
+			else
+				--DEVICE SEND DATA
+				if (number_time_slot = s_GTSss and gts_send_buffer_count > 0 and on_sync == 1) then --(send_s_GTSss-send_s_GTS_len) 
+				
+						--current_time = call TimerAsync.get_total_tick_counter();
+						start_gts_send();
+				end if	
+			end if;
+	
+			next_on_r_GTS <=0;
+			next_on_s_GTS <=0;
+			
+	
+			--verification if the time slot is entering the CAP
+			--GTS FIELDS PROCESSING
+			
+			if ((number_time_slot + 1) >= final_CAP_slot and (number_time_slot + 1) < 16) then
+				I_AM_IN_CAP <= 0;
+				I_AM_IN_CFP <= 1;
+			
+				--verification of the next time slot
+				if(PANCoordinator = 1 and number_time_slot < 15) then
+
+				--COORDINATOR verification of the next time slot
+					if(GTS_db[14-number_time_slot].gts_id != 0x00 and GTS_db[14-number_time_slot].DevAddressType != 0x0000) then	
+						if(GTS_db[14-number_time_slot].direction = 1 ) -- device wants to receive
+							next_on_s_GTS <=1; --PAN coord mode
+						else
+							next_on_r_GTS<=1; --PAN coord mode
+						end if;
+					end if;	
+				else
+				--device verification of the next time slot
+					if( (number_time_slot +1) = s_GTSss or (number_time_slot +1) = r_GTSss )
+						if((number_time_slot + 1) = s_GTSss)
+							next_on_s_GTS <=1;
+							s_GTS_length <= s_GTS_length -1;
+							if (s_GTS_length != 0 ) then
+								s_GTSss <= s_GTSss +1;
+							end if;
+						else			
+							next_on_r_GTS <=1;
+							r_GTS_length <= r_GTS_length -1;
+							if (r_GTS_length != 0 ) then
+								r_GTSss <= r_GTSss+1;
+							end if;
+						end if				
+					else
+						--idle
+						next_on_s_GTS <=0;
+						next_on_r_GTS <=0;
+					end if;
+				end if;
+			end if;
+		end process;
+		
+		TimerAsync_backoff_fired : process (TimerAsync.backoff_fired)
+		begin
+			if( csma_locate_backoff_boundary = 1 ) then
+				csma_locate_backoff_boundary <=0;
+				
+				--post start_csma_ca_slotted();
+				
+				--DEFERENCE CHANGE
+				if (backoff_deference = 0) then
+					---normal situation
+					delay_backoff_period := (call Random.rand16() & ((uint8_t)(powf(2,BE)) - 1));
+					
+					if (check_csma_ca_backoff_send_conditions((uint32_t) delay_backoff_period) = 1) then
+						backoff_deference <= 1;
+					end if;
+				else
+					backoff_deference <= 0;
+				end if;
+				
+				csma_delay <=1;
+			end if;
+			if( csma_cca_backoff_boundary = 1 ) then
+				perform_csma_ca_slotted();
+			end if;
+			if(csma_delay = 1 ) then
+				if (delay_backoff_period = 0) then
+					if(csma_slotted = 0) then
+						perform_csma_ca_unslotted();
+					else
+						--CSMA/CA SLOTTED
+						csma_delay <=0;
+						csma_cca_backoff_boundary<=1;
+					end if;
+				end if;
+				delay_backoff_period<=delay_backoff_period-1;
+			end if;
+			number_backoff++;
+		end process;
+		
+		T_ackwait_fired : process (T_ackwait.fired)
+		begin
+			if (send_ack_check = 1) then
+				retransmit_count <= retransmit_count + 1;
+				if (retransmit_count = aMaxFrameRetries or send_indirect_transmission > 0) then
+						--check the type of data being send
+						-- /*
+						-- if (associating == 1)
+						-- {
+							-- //printfUART("af ack\n", "");
+							-- associating=0;
+							-- signal MLME_ASSOCIATE.confirm(0x0000,MAC_NO_ACK);
+						-- }
+						-- */
+						
+
+						--stardard procedure, if fail discard the packet
+						send_buffer_count <= send_buffer_count -1;
+						send_buffer_msg_out <=  send_buffer_msg_out +1;
+					
+						--failsafe
+						if(send_buffer_count > SEND_BUFFER_SIZE) then
+							
+							send_buffer_count <=0;
+							send_buffer_msg_out <=0;
+							send_buffer_msg_in <=0;
+							
+						end if;
+						
+						
+						if (send_buffer_msg_out = SEND_BUFFER_SIZE) then
+							send_buffer_msg_out <=0;
+						end if;
+						
+						if (send_buffer_count > 0) then
+							send_frame_csma();
+						end if;
+							
+						send_ack_check <=0;
+						retransmit_count <=0;
+						ack_sequence_number_check <=0;
+	
+				end if;
+				--retransmissions
+				send_frame_csma();
+			end if;
+		end process;
+		
+		T_ResponseWaitTime_fired : process (T_ResponseWaitTime.fired)
+		begin
+			if (associating = 1) then
+				associating<=0;
+				MLME_ASSOCIATE.confirm(0x0000,MAC_NO_DATA);
+			end if;
+		end process;
+		
+		PD_DATA_indication : process (PD_DATA.indication) -- the indication will pass (uint8_t psduLenght,uint8_t* psdu, int8_t ppduLinkQuality)
+		begin
+			if (buffer_count > RECEIVE_BUFFER_SIZE) then
+				--mo place in rec buffer -> some error may accure
+			else
+				--memcpy(&buffer_msg[current_msg_in],psdu,sizeof(MPDU));
+				current_msg_in <=current_msg_in+1;
+				if ( current_msg_in = RECEIVE_BUFFER_SIZE ) then
+					current_msg_in <= 0;
+				end if;
+				buffer_count <=  buffer_count +1;
+				link_quality = ppduLinkQuality;
+				if (scanning_channels =1) then
+					data_channel_scan_indication();
+				else 
+					data_indication();
+				end if;
+			end if;
+		end process;
+		
+		
+		
+		
+	 end architecture MAC_core;
 
 end MAC;
 
