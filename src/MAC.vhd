@@ -237,12 +237,65 @@ package body MAC is
 
 	end procedure create_beacon_request_cmd;
 	
+		--Association commands implementations
+	
+	procedure create_association_request_cmd( CoordAddrMode: uint8_t;
+											CoordPANId : uint16_t;
+											CoordAddress : uint32_t;
+											CapabilityInformation : uint8_t;
+											SendBuffer : out SendBuffer_t );
+											
+
+	function create_association_response_cmd( DeviceAddress: uint32_t;
+											 shortaddress: uint16_t;
+											 status : uint8_t;
+											 SendBuffer : out SendBuffer_t) 
+											 return error_t;
+											 
+	procedure create_disassociation_notification_cmd( DeviceAddress: uint32_t;
+													 disassociation_reason : uint8_t;
+													  SendBuffer : out SendBuffer_t);
+	
+	procedure process_dissassociation_notification(MPDU: MPDU_t)
+		signal cmd_disassociation_notification  : cmd_disassociation_notification_t;
+	begin
+		-- extract de values from the data frame and pass it to the indication primitive
+		cmd_disassociation_notification <= MPDU.data;
+		MLME_DISASSOCIATE.indication(cmd_disassociation_notification);
+	end procedure;
+	
+	
+	
+	
 	
 	-- Syncornization functions implementations
 
 	-- GTS function implementations
 	
-	-- procedure process_gts_request(MPDU : MPDU_t);	
+	procedure process_gts_request(MPDU : MPDU_t);	
+		signal gts_characteristics : uint8_t;
+		signal source_address : uint8_t;
+	begin
+		gts_characteristics <= MPDU.data.gts_characteristics; -- get gts cara from packet
+		source_address <= MPDU.data.source_address;
+		if (get_characteristic_type(gts_characteristics) = 1 ) then
+			--allocation
+			--process the gts request
+			status <= add_gts_entry(get_gts_length(ts_characteristics),get_gts_direction(gts_characteristics),source_address);
+		else
+			--dealocation
+			status <= remove_gts_entry(source_address);
+		end if;
+		MLME_GTS.indication(source_address, gts_characteristics, 0, 0);
+		
+		
+	end procedure;
+	
+	
+	
+	
+	
+	
 	procedure init_available_gts_index( available_gts_index_count  : uint8_t;
 										available_gts_index : array (0 to GTS_SEND_BUFFER_SIZE) of uint8_t);
 		variable i : integer :=0;
@@ -410,9 +463,531 @@ package body MAC is
 	
 
 	
-	-- procedure indication_cmd(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
-	-- procedure indication_ack(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
-	-- procedure indication_data(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+	 procedure indication_cmd(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+		signal  cmd_type : uint8_t;
+		signal addressing_fields_length : uint8_t :=0;
+		
+		signal  SrcAddr : array (0 to 1) of uint32_t;
+		
+		--frame control variables
+		signal source_address		: uint8_t :=0;
+		signal destination_address	: uint8_t :=0;
+	
+		--not translated into vhdl !!!
+		--source_short *source_short_ptr;
+		--source_long *source_long_ptr;
+		
+		--dest_short *dest_short_ptr;
+		--dest_long *dest_long_ptr;
+	begin
+	
+		destination_address <=get_fc2_dest_addr(pdu.frame_control2);
+		source_address<=get_fc2_source_addr(pdu.frame_control2);
+		
+		--decrement buffer count
+		buffer_count <= buffer_count -1;
+		
+		case (destination_address)
+			when LONG_ADDRESS=> addressing_fields_length <= DEST_LONG_LEN;
+								dest_long_ptr <= (dest_long *) &pdu->data[0];
+								if(dest_long_ptr->destination_address0 !=aExtendedAddress0 and dest_long_ptr->destination_address1 !=aExtendedAddress1) then
+									--//printfUART("NOT FOR ME","");
+									return;
+								end if;
+			when SHORT_ADDRESS=> addressing_fields_length = DEST_SHORT_LEN;
+								dest_short_ptr<= (dest_short *) &pdu->data[0];
+								--destination command not for me
+								if (dest_short_ptr->destination_address != mac_PIB.macShortAddress and dest_short_ptr->destination_address !=0xffff) then
+									--//printfUART("NOT FOR ME","");
+									--////////////printfUART("NOT FOR ME %x me %e\n", dest_short_ptr->destination_address,mac_PIB.macShortAddress); 
+									return;
+								end if;
+		end case;
+		
+		case (source_address)
+			when LONG_ADDRESS=> addressing_fields_length <= addressing_fields_length + SOURCE_LONG_LEN;
+			when SHORT_ADDRESS=> addressing_fields_length <= addressing_fields_length + SOURCE_SHORT_LEN;
+		end case
+		
+		cmd_type <= pdu->data[addressing_fields_length];
+		
+		case (cmd_type)
+			when CMD_ASSOCIATION_REQUEST=> 	
+									--check if association is allowed, if not discard the frame		
+									
+									--////////printfUART("CMD_ASSOCIATION_REQUEST \n", "");
+									
+										
+											if (mac_PIB.macAssociationPermit = 0 ) then
+											
+												--////////////printfUART("Association not alowed\n", "");
+												if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then
+													build_ack(pdu->seq_num,0);
+												end if
+												return;
+											end if;
+											
+											if ( PANCoordinator= 0 ) then
+												--////////////printfUART("i�m not a pan\n", ""); 
+												return;
+											end if;
+									
+											source_long_ptr <= (source_long *) &pdu->data[DEST_SHORT_LEN];
+											
+											SrcAddr[1] <=source_long_ptr->source_address0;
+											SrcAddr[0] <=source_long_ptr->source_address1;
+											
+											MLME_ASSOCIATE.indication(SrcAddr, pdu->data[addressing_fields_length+1] , 0, 0);
+
+											if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then
+												build_ack(pdu->seq_num,1);
+											end if;
+
+		
+			when CMD_ASSOCIATION_RESPONSE=> 
+												--printfUART("CMD_ASSOCIATION_RESPONSE\n", ""); 
+												
+												associating <=0;
+												T_ResponseWaitTime.stop();
+												
+												if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then 
+													build_ack(pdu->seq_num,0);
+												end if;
+											
+												MLME_ASSOCIATE.confirm((uint16_t)(pdu->data[addressing_fields_length+1] + (pdu->data[addressing_fields_length+2] << 8)), pdu->data[addressing_fields_length+3]);
+
+			when CMD_DISASSOCIATION_NOTIFICATION=> 	--////////////printfUART("Received CMD_DISASSOCIATION_NOTIFICATION\n", ""); 
+												
+												if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then
+													build_ack(pdu->seq_num,0);
+												end if;
+												
+												process_dissassociation_notification(pdu);
+
+			when CMD_DATA_REQUEST=>
+									--////printfUART("CMD_DATA_REQUEST\n", ""); 
+									--////////printfUART("DR\n", "");
+									if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then
+
+										--TODO
+										--Problems with consecutive reception of messages
+										--
+										--build_ack(pdu->seq_num,0);
+									end if;
+									
+									--cmd_data_request_0_3_reception = (cmd_data_request_0_3 *) pdu->data;
+									
+									source_long_ptr <= (source_long *) &pdu->data[0];
+											
+									SrcAddr[1] <=source_long_ptr->source_address0;
+									SrcAddr[0] <=source_long_ptr->source_address1;
+									
+									send_ind_trans_addr(SrcAddr);
+
+			when CMD_PANID_CONFLICT=>
+
+								
+			when CMD_ORPHAN_NOTIFICATION=>
+									--////printfUART("CMD_ORPHAN_NOTIFICATION\n", ""); 
+									
+									source_long_ptr <= (source_long *) &pdu->data[DEST_SHORT_LEN];
+											
+									SrcAddr[1] <=source_long_ptr->source_address0;
+									SrcAddr[0] <=source_long_ptr->source_address1;
+									
+									MLME_ORPHAN.indication(SrcAddr, 0x00,0x00);
+								
+			when CMD_BEACON_REQUEST=>
+
+			when CMD_COORDINATOR_REALIGNMENT=>
+									--printfUART("CMD_COORDINATOR_REALIGNMENT\n", ""); 
+									
+									process_coordinator_realignment(pdu);
+
+			when CMD_GTS_REQUEST=>
+								--//////////////printfUART("Received CMD_GTS_REQUEST\n", ""); 
+								if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then
+									build_ack(pdu->seq_num,0);
+								end if;
+								process_gts_request(pdu);
+		end case;
+		
+		
+	end procedure;
+	
+	
+		
+	procedure indication_ack(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+	begin
+		buffer_count <= buffer_count -1;
+		if (send_ack_check = 1 and ack_sequence_number_check = pdu->seq_num) then
+			--transmission SUCCESS
+			T_ackwait.stop();
+			
+			send_buffer_count <= send_buffer_count-1;
+			send_buffer_msg_out<=send_buffer_msg_out+1;
+			
+			--failsafe
+			if(send_buffer_count > SEND_BUFFER_SIZE) then
+				send_buffer_count <=0;
+				send_buffer_msg_out<=0;
+				send_buffer_msg_in<=0;
+			end if;
+			
+			if (send_buffer_msg_out = SEND_BUFFER_SIZE) then
+				send_buffer_msg_out<=0;
+			end if;
+			
+			--received an ack for the association request
+			if( associating = 1 and association_cmd_seq_num = pdu->seq_num ) then
+				--////////////printfUART("ASSOC ACK\n",""); 
+				T_ResponseWaitTime.startOneShot(response_wait_time);
+				--call T_ResponseWaitTime.start(TIMER_ONE_SHOT, response_wait_time);
+			end if;
+			
+			if (gts_request = 1 and gts_request_seq_num = pdu->seq_num) then
+        
+				T_ResponseWaitTime.startOneShot(response_wait_time);
+				//call T_ResponseWaitTime.start(TIMER_ONE_SHOT, response_wait_time);
+			end if;
+			
+			--////////////printfUART("TRANSMISSION SUCCESS\n",""); 
+        
+			if (send_indirect_transmission > 0 ) then
+				--the message send was indirect
+				--remove the message from the indirect transmission queue
+				indirect_trans_queue[send_indirect_transmission-1].handler<=0x00;
+				indirect_trans_count--;
+				--////////////printfUART("SU id:%i ct:%i\n", send_indirect_transmission,indirect_trans_count);
+			end if;
+			
+			send_ack_check <=0;
+			retransmit_count <=0;
+			ack_sequence_number_check <=0;
+			
+			
+			if (send_buffer_count > 0) then
+				post send_frame_csma();
+			end if;
+			
+		end if;
+
+		if (get_fc1_frame_pending(pdu->frame_control1) = 1 anf pending_request_data =1) then --// && associating == 1
+				--////////////printfUART("Frame_pending\n",""); 
+				pending_request_data<=0;
+				create_data_request_cmd();
+		end if;
+		
+		--GTS mechanism, after the confirmation of the GTS request, must check if the beacon has the gts
+		-- /*
+		-- if (gts_ack == 1)
+		-- {
+			-- gts_ack=0;
+			-- gts_confirm=1;
+			-- call T_ResponseWaitTime.stop();
+		-- }
+		-- */
+		if(gts_send_pending_data=1) then
+			post start_gts_send();
+		end if;
+		
+		if(coordinator_gts_send_pending_data=1 and coordinator_gts_send_time_slot = number_time_slot) then
+			post start_coordinator_gts_send();
+		end if;
+				
+	end process;
+	
+	procedure indication_data(	MPDU : MPDU_t; ppduLinkQuality : uint8_t );
+		signal  data_len : uint8_t;
+		
+		signal payload		: array (0 to 79) of uint8_t;
+		signal msdu_length	: uint8_t :=0;
+		
+		signal SrcAddr : array (0 to 1) of uint32_t := (0,0);
+		signal DstAddr : array (0 to 1) of uint32_t := (0,0);
+		
+		
+		--frame control variables
+		signal source_address		: uint8_t :=0;
+		signal destination_address	: uint8_t :=0;
+		
+		-- not translated into vhdl !!!
+		--source_short *source_short_ptr;
+		--source_long *source_long_ptr;
+		
+		--dest_short *dest_short_ptr;
+		--dest_long *dest_long_ptr;
+
+	begin
+		source_address<=get_fc2_source_addr(pdu.frame_control2);
+		destination_address<=get_fc2_dest_addr(pdu.frame_control2);
+		buffer_count <= buffer_count -1;
+		if ( get_fc1_intra_pan(pdu.frame_control1)=  0 ) then
+		--INTRA PAN
+			if (destination_address > 1 and source_address > 1) then
+				-- Destination LONG - Source LONG	
+				if (destination_address = LONG_ADDRESS and source_address = LONG_ADDRESS) then
+					dest_long_ptr <= (dest_long *) &pdu->data[0];
+					source_long_ptr <= (source_long *) &pdu->data[DEST_LONG_LEN];
+					
+					--If a short destination address is included in the frame, it shall match either macShortAddress or the
+					--broadcast address (0 x ffff). Otherwise, if an extended destination address is included in the frame, it
+					--shall match aExtendedAddress.
+					if ( dest_long_ptr->destination_address0 !=aExtendedAddress0 and dest_long_ptr->destination_address1 !=aExtendedAddress1 ) then
+						--////////////printfUART("data rejected, ext destination not for me\n", ""); 
+						return;
+					end if;
+					--If a destination PAN identifier is included in the frame, it shall match macPANId or shall be the
+					--broadcast PAN identifier (0 x ffff).
+					if(dest_long_ptr->destination_PAN_identifier != 0xffff and dest_long_ptr->destination_PAN_identifier != mac_PIB.macPANId ) then
+						--////////////printfUART("data rejected, wrong destination PAN\n", ""); 
+						return;
+					end if;
+					data_len <= 20;
+					
+					
+					DstAddr[1] <= dest_long_ptr->destination_address0;
+					DstAddr[0] <=dest_long_ptr->destination_address1;
+					
+					SrcAddr[1] <=source_long_ptr->source_address0;
+					SrcAddr[0] <=source_long_ptr->source_address1;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+					
+					MCPS_DATA.indication((uint16_t)source_address, (uint16_t)source_long_ptr->source_PAN_identifier, SrcAddr,(uint16_t)destination_address, (uint16_t)dest_long_ptr->destination_PAN_identifier, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+					
+				end if;
+				
+				-- Destination SHORT - Source LONG
+				if ( destination_address = SHORT_ADDRESS and source_address = LONG_ADDRESS ) then
+					dest_short_ptr <= (dest_short *) &pdu->data[0];
+					source_long_ptr <= (source_long *) &pdu->data[DEST_SHORT_LEN];
+					
+					--If a short destination address is included in the frame, it shall match either macShortAddress or the
+					--broadcast address (0 x ffff). Otherwise, if an extended destination address is included in the frame, it
+					--shall match aExtendedAddress.
+					if ( dest_short_ptr->destination_address != 0xffff and dest_short_ptr->destination_address != mac_PIB.macShortAddress) then
+						--////////////printfUART("data rejected, short destination not for me\n", ""); 
+						return;
+					end if;
+					--If a destination PAN identifier is included in the frame, it shall match macPANId or shall be the
+					--broadcast PAN identifier (0 x ffff).
+					if(dest_short_ptr->destination_PAN_identifier != 0xffff && dest_short_ptr->destination_PAN_identifier != mac_PIB.macPANId )
+						--////////////printfUART("data rejected, wrong destination PAN\n", ""); 
+						return;
+					end if
+					
+					data_len <= 14;
+					
+					DstAddr[0] <=dest_short_ptr->destination_address;
+					
+					SrcAddr[1] <=source_long_ptr->source_address0;
+					SrcAddr[0] <=source_long_ptr->source_address1;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+					
+					MCPS_DATA.indication((uint16_t)source_address, (uint16_t)source_long_ptr->source_PAN_identifier, SrcAddr,(uint16_t)destination_address, (uint16_t)dest_short_ptr->destination_PAN_identifier, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+
+				end if;
+				-- Destination LONG - Source SHORT
+				if ( destination_address = LONG_ADDRESS && source_address = SHORT_ADDRESS ) then
+					dest_long_ptr = (dest_long *) &pdu->data[0];
+					source_short_ptr = (source_short *) &pdu->data[DEST_LONG_LEN];
+					
+					--If a short destination address is included in the frame, it shall match either macShortAddress or the
+					--broadcast address (0 x ffff). Otherwise, if an extended destination address is included in the frame, it
+					--shall match aExtendedAddress.
+					if ( dest_long_ptr->destination_address0 !=aExtendedAddress0 and dest_long_ptr->destination_address1 !=aExtendedAddress1 ) then
+						--////////////printfUART("data rejected, ext destination not for me\n", ""); 
+						return;
+					end if;
+					--If a destination PAN identifier is included in the frame, it shall match macPANId or shall be the
+					--broadcast PAN identifier (0 x ffff).
+					if(dest_long_ptr->destination_PAN_identifier != 0xffff and  dest_long_ptr->destination_PAN_identifier != mac_PIB.macPANId ) then
+						--////////////printfUART("data rejected, wrong destination PAN\n", ""); 
+						return;
+					end if;
+					
+					data_len <= 14;
+					
+					DstAddr[1] <= dest_long_ptr->destination_address0;
+					DstAddr[0] <= dest_long_ptr->destination_address1;
+					
+					
+					SrcAddr[0] <= source_short_ptr->source_address;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+					
+					MCPS_DATA.indication((uint16_t)source_address, (uint16_t)source_short_ptr->source_PAN_identifier, SrcAddr,(uint16_t)destination_address, (uint16_t)dest_long_ptr->destination_PAN_identifier, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+
+				end if;
+				
+				
+				--Destination SHORT - Source SHORT
+				if ( destination_address = SHORT_ADDRESS and source_address = SHORT_ADDRESS )then
+					dest_short_ptr <= (dest_short *) &pdu->data[0];
+					source_short_ptr <= (source_short *) &pdu->data[DEST_SHORT_LEN];
+					
+					--If a short destination address is included in the frame, it shall match either macShortAddress or the
+					--broadcast address (0 x ffff). Otherwise, if an extended destination address is included in the frame, it
+					--shall match aExtendedAddress.
+					if ( dest_short_ptr->destination_address != 0xffff and dest_short_ptr->destination_address != mac_PIB.macShortAddress) then
+						--////printfUART("data rejected, short destination not for me\n", ""); 
+						return;
+					end if;
+					--If a destination PAN identifier is included in the frame, it shall match macPANId or shall be the
+					--broadcast PAN identifier (0 x ffff).
+					if(dest_short_ptr->destination_PAN_identifier != 0xffff and dest_short_ptr->destination_PAN_identifier != mac_PIB.macPANId ) then
+						--////printfUART("SH SH data rejected, wrong destination PAN %x\n",mac_PIB.macPANId ); 
+						return;
+					end if;
+					
+					data_len <= 8;
+					
+					if ( get_fc1_ack_request(pdu->frame_control1) = 1 ) then
+						build_ack(pdu->seq_num,0);
+					enf if;
+					
+					DstAddr[0] <=dest_short_ptr->destination_address;
+					
+					SrcAddr[0] <=source_short_ptr->source_address;
+					
+					msdu_length <= (pdu->length - 5) - data_len;
+					
+					
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+				
+					MCPS_DATA.indication((uint16_t)source_address, (uint16_t)source_short_ptr->source_PAN_identifier, SrcAddr,(uint16_t)destination_address, (uint16_t)dest_short_ptr->destination_PAN_identifier, DstAddr, (uint16_t)msdu_length,payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+
+				end if;
+			end if;
+			
+			--/*********NO DESTINATION ADDRESS PRESENT ****************/
+			
+			if ( destination_address = 0 && source_address > 1 ) then
+				if (source_address = LONG_ADDRESS) then
+					--Source LONG
+					source_long_ptr <= (source_long *) &pdu->data[0];
+					
+					--If only source addressing fields are included in a data or MAC command frame, the frame shall be
+					--accepted only if the device is a PAN coordinator and the source PAN identifier matches macPANId.
+					if ( PANCoordinator==0 or source_long_ptr->source_PAN_identifier != mac_PIB.macPANId ) then
+						--////////////printfUART("data rejected, im not pan\n", ""); 
+						return;
+					end if;
+					
+					data_len <= 10;
+					
+					SrcAddr[1] <=source_long_ptr->source_address0;
+					SrcAddr[0] <=source_long_ptr->source_address1;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+					
+					MCPS_DATA.indication((uint16_t)source_address,(uint16_t)source_long_ptr->source_PAN_identifier, SrcAddr,(uint16_t)destination_address, 0x0000, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+				else
+					--Source SHORT
+
+					source_short_ptr <= (source_short *) &pdu->data[0];
+					--If only source addressing fields are included in a data or MAC command frame, the frame shall be
+					--accepted only if the device is a PAN coordinator and the source PAN identifier matches macPANId.
+					if ( PANCoordinator==0 or source_short_ptr->source_PAN_identifier != mac_PIB.macPANId ) then
+						--////////////printfUART("data rejected, im not pan\n", ""); 
+						return;
+					end if;
+					
+					data_len <= 4;
+
+					
+					SrcAddr[0] <=source_short_ptr->source_address;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+					
+					MCPS_DATA.indication((uint16_t)source_address, (uint16_t)source_short_ptr->source_PAN_identifier, SrcAddr,(uint16_t)destination_address, 0x0000, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+
+				end if;
+			end if
+			/*********NO SOURCE ADDRESS PRESENT ****************/
+			
+			if ( destination_address > 1 && source_address = 0 ) then
+				if (destination_address = LONG_ADDRESS) then
+					--Destination LONG
+					dest_long_ptr <= (dest_long *) &pdu->data[0];
+					
+					--If a short destination address is included in the frame, it shall match either macShortAddress or the
+					--broadcast address (0 x ffff). Otherwise, if an extended destination address is included in the frame, it
+					--shall match aExtendedAddress.
+					if ( dest_long_ptr->destination_address0 !=aExtendedAddress0 and dest_long_ptr->destination_address1 !=aExtendedAddress1 ) then
+						--////////////printfUART("data rejected, ext destination not for me\n", ""); 
+						return;
+					end if;
+					--If a destination PAN identifier is included in the frame, it shall match macPANId or shall be the
+					--broadcast PAN identifier (0 x ffff).
+					if(dest_long_ptr->destination_PAN_identifier != 0xffff and dest_long_ptr->destination_PAN_identifier != mac_PIB.macPANId ) then
+						--////////////printfUART("data rejected, wrong destination PAN\n", ""); 
+						return;
+					end if;
+					
+					data_len <= 10;
+					
+					DstAddr[1] <= dest_long_ptr->destination_address0;
+					DstAddr[0] <=dest_long_ptr->destination_address1;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+				
+					MCPS_DATA.indication((uint16_t)source_address,0x0000, SrcAddr,(uint16_t)destination_address, (uint16_t)dest_long_ptr->destination_PAN_identifier, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+
+				else
+					--Destination SHORT
+					dest_short_ptr <= (dest_short *) &pdu->data[0];
+					
+					--If a short destination address is included in the frame, it shall match either macShortAddress or the
+					--broadcast address (0 x ffff). Otherwise, if an extended destination address is included in the frame, it
+					--shall match aExtendedAddress.
+					if ( dest_short_ptr->destination_address != 0xffff and dest_short_ptr->destination_address != mac_PIB.macShortAddress) then
+						--////////////printfUART("data rejected, short destination not for me\n", ""); 
+						return;
+					end if;
+					--If a destination PAN identifier is included in the frame, it shall match macPANId or shall be the
+					--broadcast PAN identifier (0 x ffff).
+					if(dest_short_ptr->destination_PAN_identifier != 0xffff and  dest_short_ptr->destination_PAN_identifier != mac_PIB.macPANId ) then
+						--////////////printfUART("data rejected, wrong destination PAN\n", ""); 
+						return;
+					end if;
+					
+					data_len <= 4;
+					
+					DstAddr[0] <=dest_short_ptr->destination_address;
+					
+					msdu_length <= pdu->length - data_len;
+
+					--memcpy(&payload,&pdu->data[data_len],msdu_length * sizeof(uint8_t));
+					
+					
+					MCPS_DATA.indication((uint16_t)source_address,0x0000, SrcAddr,(uint16_t)destination_address, (uint16_t)dest_short_ptr->destination_PAN_identifier, DstAddr, (uint16_t)msdu_length, payload, (uint16_t)ppduLinkQuality, 0x0000,0x0000);  
+
+					--data_len = 4;
+				end if;
+			end if;
+		else
+		--intra_pan == 1
+		end if;
+	end procedure;
+	
+	
+		
+	 
 	
 	-- --- reception and transmission
 	
@@ -684,7 +1259,7 @@ package body MAC is
 			
 			--////printfUART("sED\n", "");
 		end if;	
-		signal MLME_BEACON_NOTIFY.indication((uint8_t)packet->seq_num,pan_descriptor,0, 0, mac_PIB.macBeaconPayloadLenght, packet->data);
+		MLME_BEACON_NOTIFY.indication((uint8_t)packet->seq_num,pan_descriptor,0, 0, mac_PIB.macBeaconPayloadLenght, packet->data);
 			
 	end procedure;
 	
@@ -698,7 +1273,26 @@ package body MAC is
 												 -- device_extended1 : uint32_t;
 												  -- device_short_address :uint16_t);
 	-- procedure create_orphan_notification;
-	-- procedure process_coordinator_realignment(MPDU_ptr : access MPDU_t);
+	procedure process_coordinator_realignment(MPDU_ptr : access MPDU_t);
+	
+	begin
+		--cmd_coord_realignment *cmd_realignment = 0;
+	
+		--dest_long *dest_long_ptr=0;
+		--source_short *source_short_ptr=0;
+
+		--cmd_realignment = (cmd_coord_realignment*) &pdu->data[DEST_LONG_LEN + SOURCE_SHORT_LEN];
+		
+		--//creation of a pointer the addressing structures
+		--dest_long_ptr = (dest_long *) &pdu->data[0];
+		--source_short_ptr = (source_short *) &pdu->data[DEST_LONG_LEN];
+			
+		--mac_PIB.macCoordShortAddress = ((cmd_realignment->coordinator_short_address0 << 8) | cmd_realignment->coordinator_short_address0 );
+		--mac_PIB.macShortAddress = cmd_realignment->short_address;
+		
+		
+		--printfUART("PCR %i %i\n",mac_PIB.macCoordShortAddress,mac_PIB.macShortAddress); 
+	end procedure;
 
 	function SerializeFrameControl_t (Frame : FrameControl_t) return uint16_t is
 		variable RetVal : uint16_t :=0;
