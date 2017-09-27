@@ -105,7 +105,8 @@ package MAC is
 	
 	-- indirect transmission commands
 	--function used to initialize the indirect transmission buffer
-	procedure init_indirect_trans_buffer;
+	procedure init_indirect_trans_buffer(indirect_trans_count : out uint8_t;
+										indirect_trans_queue : out array (0 to INDIRECT_BUFFER_SIZE) of indirect_transmission_element);
 	--function used to search and send an existing indirect transmission message
 	procedure send_ind_trans_addr( DeviceAddress : uint32_t);
 	--function used to remove an existing indirect transmission message
@@ -149,8 +150,7 @@ package MAC is
 	procedure create_orphan_notification;
 	procedure process_coordinator_realignment(MPDU_ptr : access MPDU_t);
 
-
-										
+								
 										
 	function DeserializeFrameControl_t (Val : uint16_t) return FrameControl_t ;
 	function SerializeFrameControl_t (Frame : FrameControl_t) return uint16_t ;
@@ -325,7 +325,18 @@ package body MAC is
 	
 	-- -- indirect transmission commands
 	-- --function used to initialize the indirect transmission buffer
-	-- procedure init_indirect_trans_buffer;
+	procedure init_indirect_trans_buffer (indirect_trans_count : out uint8_t;
+											indirect_trans_queue : out array (0 to INDIRECT_BUFFER_SIZE) of indirect_transmission_element);
+		variable i: integer;
+	begin
+
+		for i in 0 to INDIRECT_BUFFER_SIZE loop
+			indirect_trans_queue[i].handler :=16#00#;
+			indirect_trans_count:=0;
+		end loop;
+		
+	end procedure;
+
 	-- --function used to search and send an existing indirect transmission message
 	-- procedure send_ind_trans_addr( DeviceAddress : uint32_t);
 	-- --function used to remove an existing indirect transmission message
@@ -383,14 +394,7 @@ package body MAC is
 	begin
 		--to be completed
 	end function;
-	type MHR_t is record
-		FrameControl : uint16_t;
-		--frame_control_2 : uint8_t;
-		SequenceNumber : uint8_t;
-		AddressingFields:AddressingFields_t;
-		AuxiliarySecurityHeader : AuxiliarySecurityHeader_t;
-		--data : uint8x128_t;
-	end record MHR_t;
+
 
 
 

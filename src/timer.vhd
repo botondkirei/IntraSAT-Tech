@@ -1,3 +1,7 @@
+-- Author: Botond Sandor Kirei
+-- Emloyer: Technical University of Cluj Napoca
+-- Scope: IEEE 802.15.4 MAC implementation
+-- Description: emulate the behavior of the timer circuit
 
 use work.C_like_type_def.all;
 

@@ -125,6 +125,15 @@ package MAC_pack is
 		SrcAddrMode : integer range 0 to 3;
 	end record FrameControl_t;
 	
+	type MHR_t is record
+		FrameControl : uint16_t;
+		--frame_control_2 : uint8_t;
+		SequenceNumber : uint8_t;
+		AddressingFields:AddressingFields_t;
+		AuxiliarySecurityHeader : AuxiliarySecurityHeader_t;
+		--data : uint8x128_t;
+	end record MHR_t;
+	
 	type MPDU_t is record
 		MHR : MHR_t;
 		MACPayload : uint8x128_t;
@@ -152,6 +161,14 @@ package MAC_pack is
 		element_in : uint8_t;
 		element_out : uint8_t;
 	end record;
+	
+	type indirect_transmission_element is record
+		handler : uint8_t;
+		transaction_persistent_time : uint16_t;
+		-- MPDU frame;
+		frame : uint8x128_t_t;
+	end record;
+
 	
 	constant GTS_db_size : integer :=  7;
 	
