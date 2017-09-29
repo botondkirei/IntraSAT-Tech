@@ -1003,8 +1003,187 @@ package body MAC is
 	-- -- beacon management functions
 	
 	-- --function to create the beacon
-	-- procedure create_beacon();
+	procedure create_beacon();
 	-- --function to process the beacon information
+	
+		signal i: integer :=0;
+		signal packet_length: uint8_t := 25;
+		signal data_count			: int :=0;
+		signal pending_data_index	: int =:0;
+		signal beacon_pkt: MPDU_t;
+		--pending frames
+		signal short_addr_pending	: uint8_t :=0;
+		signal long_addr_pending	: uint8_t :=0;
+		signal gts_directions		: uint8_t :=0x00;
+		signal frame_control : uint16_t;
+		
+	begin
+		
+		packet_length <= 15;
+		
+		frame_control = set_frame_control(TYPE_BEACON,0,0,0,1,SHORT_ADDRESS,SHORT_ADDRESS);
+		
+		beacon_pkt.frame_control1 <= (uint8_t)( frame_control);
+		
+		beacon_pkt.frame_control2 = (uint8_t)( frame_control >> 8);
+		
+		beacon_pkt.seq_num = mac_PIB.macBSN;
+		mac_PIB.macBSN++;
+		
+		
+		--relocation error
+		beacon_pkt.destination_PAN_identifier <= mac_PIB.macPANId;
+		--relocation error
+		beacon_pkt.destination_address = 0xffff;
+		--relocation error
+		beacon_pkt.source_address = mac_PIB.macShortAddress;
+		if (mac_PIB.macShortAddress = 0x0000) then
+			--the device is the PAN Coordinator
+			beacon_pkt.set_superframe_specification(mac_PIB.macBeaconOrder,(uint8_t)mac_PIB.macSuperframeOrder,final_CAP_slot,0,1,mac_PIB.macAssociationPermit);
+			-- to do
+			-- declare beacon_pkt as protekted, define set_superframe_specification procedure for it
+		else
+			beacon_pkt.set_superframe_specification(mac_PIB.macBeaconOrder,(uint8_t)mac_PIB.macSuperframeOrder,final_CAP_slot,0,1,mac_PIB.macAssociationPermit);
+		end if;
+		
+		beacon_pkt.set_gts_specification(GTS_descriptor_count,mac_PIB.macGTSPermit);
+		
+		beacon_pkt.set_pending_address_specification(short_addr_pending,long_addr_pending);
+		
+		data_count <= 9;
+		packet_length <= 15;
+		
+		--BUILDING the GTS DESCRIPTORS
+		if( (GTS_descriptor_count + GTS_null_descriptor_count) > 0 ) then
+			data_count <= data_count +1 ;
+					
+			for i in 0 to 7 loop
+				if( GTS_db[i].gts_id != 0x00 and GTS_db[i].DevAddressType != 0x0000) then
+					
+					beacon_pkt.data[data_count] = GTS_db[i].DevAddressType;
+					--//////////////printfUART("B gts %i\n", (GTS_db[i].DevAddressType >> 8 ) ); 
+					
+					data_count <= data_count +1 ;
+					beacon_pkt.data[data_count] = (GTS_db[i].DevAddressType >> 8 );
+					--//////////////printfUART("B gts %i\n",  GTS_db[i].DevAddressType ); 
+					
+					data_count <= data_count +1 ;
+					
+					mac_beacon_txmpdu_ptr->data[data_count] = set_gts_descriptor(15-i,GTS_db[i].length);
+					data_count <= data_count +1 ;
+					--//////printfUART("B gts %i\n", set_gts_descriptor(GTS_db[i].starting_slot,GTS_db[i].length) ); 
+					
+					packet_length <= packet_length + 3;
+					
+					if ( GTS_db[i].direction = 1 )then
+						gts_directions <= gts_directions | (1 << i); 
+					else
+						gts_directions = gts_directions | (0 << i); 
+					end if;
+					--//////printfUART("dir %i\n", gts_directions); 
+				end if;
+			end loop
+			beacon_pkt.data[9] = gts_directions;
+			--CHECK
+			packet_length <= packet_length ;
+			--BUILDING the NULL GTS DESCRIPTORS
+			if ( GTS_null_descriptor_count > 0 ) then
+				for i in 0 to 7 loop
+					if( GTS_null_db[i].DevAddressType != 0x0000) then
+						beacon_pkt.data[data_count] = GTS_null_db[i].DevAddressType;
+						--//////////////printfUART("B gts %i\n", (GTS_db[i].DevAddressType >> 8 ) ); 
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count] = (GTS_null_db[i].DevAddressType >> 8 );
+						--//////////////printfUART("B gts %i\n",  GTS_db[i].DevAddressType ); 
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count] = 0x00;
+						data_count <= data_count +1 ;
+						--//////////////printfUART("B gts %i\n", set_gts_descriptor(GTS_db[i].starting_slot,GTS_db[i].length) ); 
+						packet_length <= packet_length +3;
+					end if;
+				end loop;
+			end if;
+			--resetting the GTS specification field
+			beacon_pkt.data[8] = set_gts_specification(GTS_descriptor_count + GTS_null_descriptor_count,mac_PIB.macGTSPermit);
+			
+
+		end if;
+
+		pending_data_index = data_count;
+		data_count <= data_count +1 ;
+		
+		--//IMPLEMENT PENDING ADDRESSES
+		--//temporary
+		--//indirect_trans_count =0;
+		
+		if (indirect_trans_count > 0 ) then
+				--IMPLEMENT THE PENDING ADDRESSES CONSTRUCTION
+
+			for i in 0 to INDIRECT_BUFFER_SIZE loop
+				if (indirect_trans_queue[i].handler > 0x00) then
+					pkt_ptr = (MPDU *)&indirect_trans_queue[i].frame;
+					--ADD INDIRECT TRANSMISSION DESCRIPTOR
+					if(get_fc2_dest_addr(pkt_ptr->frame_control2) = SHORT_ADDRESS) then
+						short_addr_pending <= short_addr_pending +1;
+						packet_length = packet_length + 2;
+						beacon_pkt.data[data_count]=pkt_ptr->data[2];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[3];
+						data_count <= data_count +1 ;
+					end if;
+				end if;
+			end loop;
+			for i in 0 to INDIRECT_BUFFER_SIZE loop
+				if (indirect_trans_queue[i].handler > 0x00) then
+					if(get_fc2_dest_addr(pkt_ptr->frame_control2) = LONG_ADDRESS) then
+
+						long_addr_pending <= long_addr_pending +1;
+						packet_length = packet_length + 8;
+
+						beacon_pkt.data[data_count]=pkt_ptr->data[0];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[1];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[2];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[3];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[4];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[5];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[6];
+						data_count <= data_count +1 ;
+						beacon_pkt.data[data_count]=pkt_ptr->data[7];
+						data_count <= data_count +1 ;
+					end if;
+				end if;
+			end loop;
+		end if;
+		
+		beacon_pkt.data[pending_data_index] = set_pending_address_specification(short_addr_pending,long_addr_pending);
+		
+		
+		---adding the beacon payload
+		if (mac_PIB.macBeaconPayloadLenght > 0 ) then
+			for i in 0 to mac_PIB.macBeaconPayloadLenght loop
+				beacon_pkt.data[data_count] = mac_PIB.macBeaconPayload[i];
+				data_count <= data_count +1 ;
+				packet_length <= packet_length +1;
+			end loop;
+		end if;
+		
+		--//short_addr_pending=0;
+		--//long_addr_pending=0;
+		
+		--length = packet_length;
+		
+		--send_beacon_length = packet_length;
+		
+		--send_beacon_frame_ptr = (uint8_t*)mac_beacon_txmpdu_ptr;
+
+	end procedure;
+
 	 procedure  process_beacon(packet : MPDU_t; ppduLinkQuality : uint8_t );
 		-- ORGANIZE THE PROCESS BEACON FUNCION AS FOLLOWS.
 		-- 1- GET THE BEACON ORDER

@@ -57,73 +57,73 @@ package body Timer is
 
 		
 	type Timer_t is protected body
-		 ticks_counter : uint32_t;
+		variable ticks_counter : uint32_t;
 
 		--BEACON INTERVAL VARIABLES
-		bi_ticks			: uint32_t ;
-		bi_backoff_periods	: uint32_t ;
-		before_bi_ticks		: uint32_t ;
-		sd_ticks			: uint32_t ;
+		variable bi_ticks			: uint32_t ;
+		variable bi_backoff_periods	: uint32_t ;
+		variable before_bi_ticks		: uint32_t ;
+		variable sd_ticks			: uint32_t ;
 
 		--number of backoff periods
-		time_slot_backoff_periods : uint32_t;
+		variable time_slot_backoff_periods : uint32_t;
 
 		--number of ticks in the timeslot
-		time_slot_ticks				: uint32_t ;
-		before_time_slot_ticks		: uint32_t ;
-		time_slot_tick_next_fire	: uint32_t ;
+		variable time_slot_ticks				: uint32_t ;
+		variable before_time_slot_ticks		: uint32_t ;
+		variable time_slot_tick_next_fire	: uint32_t ;
 
 		--BACKOFF VARIABLES
-		backoff_symbols : uint32_t;
+		variable backoff_symbols : uint32_t;
 
 		--number of ticks in the backoff
-		backoff_ticks: uint32_t := 5;
+		variable backoff_ticks: uint32_t := 5;
 
 		--COUNTER VARIABLES
-		backoff_ticks_counter : uint32_t :=0;
+		variable backoff_ticks_counter : uint32_t :=0;
 
 		--give the current time slot number
-		current_time_slot : uint8_t :=0;
+		variable current_time_slot : uint8_t :=0;
 		--counts the current number of time slots of each time slot
-		current_number_backoff_on_time_slot : uint32_t :=0;
+		variable current_number_backoff_on_time_slot : uint32_t :=0;
 		--count the total number of backoffs
 		 current_number_backoff : uint32_t := 0;
 
 		--OTHER
-		backoffs : boolean := FALSE;
-		enable_backoffs : boolean :=FALSE;
+		variable backoffs : boolean := FALSE;
+		variable enable_backoffs : boolean :=FALSE;
 
-		previous_sfd: uint8_t :=0;
-		current_sfd : uint8_t :=0;
+		variable previous_sfd: uint8_t :=0;
+		variable current_sfd : uint8_t :=0;
 
-		process_frame_tick_counter: uint32_t :=0;
+		variable process_frame_tick_counter: uint32_t :=0;
 
-		total_tick_counter : uint32_t :=0;
+		variable total_tick_counter : uint32_t :=0;
 
-		timers_enable : uint8_t :=0x01;	
+		variable timers_enable : uint8_t :=0x01;	
 
-		clock : std_logic := '0';
+		variable clock : std_logic := '0';
 		
-		enabled : boolean :=FALSE;
+		variable enabled : boolean :=FALSE;
 		
-		procedure start;
+		procedure start is
 		begin
 			enabled := TRUE;
 		end procedure;
 		
-		procedure stop;
+		procedure stop is
 		begin
 			enabled := FALSE;
 		end procedure;
 		
-		procedure reset;
+		procedure reset is
 		begin
 			ticks_counter := 0;
 			enabled := TRUE;
 		end procedure;
 		
 		procedure set_bi_sd( bi_symbols : uint32_t;
-							 sd_symbols : uint32_t);
+							 sd_symbols : uint32_t) is
 		begin
 			time_slot_backoff_periods := (sd_symbols / NUMBER_TIME_SLOTS) / backoff_symbols;
 			time_slot_ticks := time_slot_backoff_periods * backoff_ticks;
@@ -143,28 +143,28 @@ package body Timer is
 			before_bi_ticks := bi_ticks - BEFORE_BI_INTERVAL;
 		end procedure;
 		
-		procedure set_backoff_symbols (Backoff_Duration_Symbols : uint8_t);
+		procedure set_backoff_symbols (Backoff_Duration_Symbols : uint8_t) is
 		begin
 			backoff_symbols := Backoff_Duration_Symbols;
 			backoff_ticks :=  1;
 		end procedure;
 		
-		procedure set_enable_backoffs (enable : boolean);
+		procedure set_enable_backoffs (enable : boolean) is
 		begin
 			enable_backoffs := enable;
 		end procedure;
 		
-		procedure set_timers_enable ( timer : uint8_t);
+		procedure set_timers_enable ( timer : uint8_t) is
 		begin
 			timers_enable := timer;
 		end procedure;
 		
-		procedure reset_process_frame_tick_counter;
+		procedure reset_process_frame_tick_counter is
 		begin
 			process_frame_tick_counter :=0;
 		end procedure;
 		
-		function reset_start(start_ticks:	uint32_t) return uint8_t;
+		function reset_start(start_ticks:	uint32_t) return uint8_t is
 		begin
 			current_time_slot := start_ticks / time_slot_ticks;
 			
@@ -187,7 +187,7 @@ package body Timer is
 			return current_time_slot;
 		end procedure;
 		
-		procedure fired;
+		procedure fired is
 		begin
 			if(timers_enable = 16#01#) then
 			
@@ -250,7 +250,7 @@ package body Timer is
 		end procedure;
 		
 		--time before BI
-		function before_bi_fired return boolean;
+		function before_bi_fired return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -261,7 +261,7 @@ package body Timer is
 			return flag;
 		end function;
 		
-		function sd_fired return boolean;
+		function sd_fired return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -272,7 +272,7 @@ package body Timer is
 			return flag;
 		end function;
 		
-		function bi_fired return boolean;
+		function bi_fired return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -283,7 +283,7 @@ package body Timer is
 			return flag;
 		end function;
 		--backoff fired
-		function backoff_fired return boolean;
+		function backoff_fired return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -294,7 +294,7 @@ package body Timer is
 			return flag;
 		end function;
 		--backoff boundary fired
-		function	time_slot_fired			return boolean;
+		function	time_slot_fired			return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -305,7 +305,7 @@ package body Timer is
 			return flag;
 		end function;
 		
-		function	before_time_slot_fired	return boolean;
+		function	before_time_slot_fired	return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -316,7 +316,7 @@ package body Timer is
 			return flag;
 		end function;
 		
-		function	sfd_fired				return boolean;
+		function	sfd_fired				return boolean is
 			variable flag : boolean := FALSE;
 		begin
 			if flag then
@@ -327,57 +327,57 @@ package body Timer is
 			return flag;
 		end function;
 		
-		function get_current_ticks return uint32_t;
+		function get_current_ticks return uint32_t is
 		begin
 			return ticks_counter;
 		end function;
 		
-		function get_sd_ticks return uint32_t;
+		function get_sd_ticks return uint32_t is
 		begin
 			return time_slot_ticks * NUMBER_TIME_SLOTS;
 		end function;
 		
-		function get_bi_ticks return uint32_t;
+		function get_bi_ticks return uint32_t is
 		begin
 			return bi_ticks;
 		end function;
 
-		function get_backoff_ticks return uint32_t;
+		function get_backoff_ticks return uint32_t is
 		begin
 			return backoff_ticks;
 		end function;
 
-		function get_time_slot_ticks return uint32_t;
+		function get_time_slot_ticks return uint32_t is
 		begin
 			return time_slot_ticks;
 		end function;		
 		
-		function get_current_number_backoff return uint32_t;
+		function get_current_number_backoff return uint32_t is
 		begin
 			return current_number_backoff;
 		end function;		
 		
-		function get_time_slot_backoff_periods return uint32_t;
+		function get_time_slot_backoff_periods return uint32_t is
 		begin
 			return time_slot_backoff_periods;
 		end function;		
 		
-		function get_current_time_slot return uint32_t;
+		function get_current_time_slot return uint32_t is
 		begin
 			return current_time_slot;
 		end function;		
 
-		function get_current_number_backoff_on_time_slot return uint32_t;
+		function get_current_number_backoff_on_time_slot return uint32_t is
 		begin
 			return current_number_backoff_on_time_slot;
 		end function;			
 
-		function get_total_tick_counter return uint32_t;
+		function get_total_tick_counter return uint32_t is
 		begin
 			return total_tick_counter;
 		end function;		
 
-		function get_process_frame_tick_counter return uint32_t;
+		function get_process_frame_tick_counter return uint32_t is
 		begin
 			return process_frame_tick_counter;
 		end function;				

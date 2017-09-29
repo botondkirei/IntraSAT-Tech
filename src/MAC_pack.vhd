@@ -31,7 +31,15 @@ package MAC_pack is
 	constant aMaxMACPayloadSize : integer;
 	type UWBPRF_t is (PRF_OFF, NOMINAL_4_M, NOMINAL_16_M, NOMINAL_64_M);
 	type Ranging is (NON_RANGING, ALL_RANGING, PHY_HEADER_ONLY);
-	--type UWBPreambleSymbolRepetitions_t is (0, 16, 64, 1024, 4096);
+	subtype UWBPreambleSymbolRepetitions_t is integer ;-- possible values(0, 16, 64, 1024, 4096);
+	type KeySource_t is record
+	--to be completed;
+		dummy : boolean;
+	end record KeySource_t;
+	type Ranging_t is record
+	--to be completed;
+		dummy : boolean;	
+	end record Ranging_t;
 	type MCPS_DATA_request_t is record
 		SrcAddrMode : SrcAddrMode_t;
 		DstAddrMode:DstAddrMode_t;
@@ -76,6 +84,7 @@ package MAC_pack is
 	type uint8x2_t is  array (0 to 1) of uint8_t;
 	type uint8x4_t is  array (0 to 3) of uint8_t;
 	type uint8x5_t is  array (0 to 4) of uint8_t;
+	type uint8x6_t is  array (0 to 4) of uint8_t;
 	type uint8x8_t is  array (0 to 7) of uint8_t;
 	type uint8x10_t is  array (0 to 9) of uint8_t;
 	type uint8x14_t is  array (0 to 13) of uint8_t;
@@ -166,7 +175,7 @@ package MAC_pack is
 		handler : uint8_t;
 		transaction_persistent_time : uint16_t;
 		-- MPDU frame;
-		frame : uint8x128_t_t;
+		frame : uint8x128_t;
 	end record;
 
 	
@@ -175,5 +184,5 @@ package MAC_pack is
 end package;
 
 package body MAC_pack is
-	constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMaxMACPayloadSize;
+	constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMinMPDUOverhead;
 end package body MAC_pack;
