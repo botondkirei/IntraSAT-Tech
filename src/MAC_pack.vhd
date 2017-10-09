@@ -27,8 +27,10 @@ package MAC_pack is
 -- primitive definitions
 	constant aMaxPHYPacketSize : integer := 127;
 	constant aMinMPDUOverhead: integer := 9;
+	constant aMaxBeaconOverhead: integer := 75;
 	--constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMaxMACPayloadSize;
 	constant aMaxMACPayloadSize : integer;
+	constant aMaxBeaconPayloadLength : integer;
 	type UWBPRF_t is (PRF_OFF, NOMINAL_4_M, NOMINAL_16_M, NOMINAL_64_M);
 	type Ranging is (NON_RANGING, ALL_RANGING, PHY_HEADER_ONLY);
 	subtype UWBPreambleSymbolRepetitions_t is integer ;-- possible values(0, 16, 64, 1024, 4096);
@@ -62,18 +64,18 @@ package MAC_pack is
 		DataRate : integer range 0 to 4;
 	end record MCPS_DATA_request_t;
 	
-	type MCPS_DATA_confirm is record
+	type MCPS_DATA_confirm_t is record
 		dummy: boolean ;-- to be completed
-	end record MCPS_DATA_confirm;
-	type MCPS_DATA_indication is record
+	end record MCPS_DATA_confirm_t;
+	type MCPS_DATA_indication_t is record
 		dummy: boolean ;-- to be completed
 		-- to be completed
-	end record MCPS_DATA_indication;
+	end record MCPS_DATA_indication_t;
 	
 	type MCPS_DATA_t is record
 		request : MCPS_DATA_request_t;
-		confirm : MCPS_DATA_confirm;
-		inidcation : MCPS_DATA_indication;
+		confirm : MCPS_DATA_confirm_t;
+		inidcation : MCPS_DATA_indication_t;
 	end record MCPS_DATA_t;
 	type macPIB is record
 		dummy: boolean ;-- to be completed
@@ -89,24 +91,16 @@ package MAC_pack is
 	type uint8x10_t is  array (0 to 9) of uint8_t;
 	type uint8x14_t is  array (0 to 13) of uint8_t;
 	type uint8x128_t is  array (0 to 127) of uint8_t;
-	type DestinationPANIndetifier_t is record
-		len : boolean;
-		short : uint8x2_t;
-	end record DestinationPANIndetifier_t;
-	type DestinationAddress_t is record
-		none: boolean;
-		short: uint8x2_t;
-		long: uint8x8_t;
-	end record DestinationAddress_t;
-	type SourcePANIndetifier_t is record
+	
+	type PANIndetifier_t is record
 		none : boolean;
 		short : uint8x2_t;
-	end record SourcePANIndetifier_t;
-	type SourceAddress_t is record
+	end record PANIndetifier_t;
+	type Address_t is record
 		none: boolean;
 		short: uint8x2_t;
 		long: uint8x8_t;
-	end record SourceAddress_t;
+	end record Address_t;
 
 	type AuxiliarySecurityHeader_t is record 
 			none: boolean;
@@ -116,10 +110,10 @@ package MAC_pack is
 			x14 : uint8x14_t;
 		end record;
 	type AddressingFields_t is record
-		DestinationPANIndetifier : DestinationPANIndetifier_t;
-		DestinationAddress: DestinationAddress_t;
-		SourcePANIndetifier : SourcePANIndetifier_t;
-		SourceAddress : SourceAddress_t;
+		DestinationPANIndetifier : PANIndetifier_t;
+		DestinationAddress: Address_t;
+		SourcePANIndetifier : PANIndetifier_t;
+		SourceAddress : Address_t;
 	end record;
 	
 	type FrameControl_t is record
@@ -181,8 +175,157 @@ package MAC_pack is
 	
 	constant GTS_db_size : integer :=  7;
 	
+	--type FrameControl_o is protected
+	--	function set_frame_control (frame_type:in uint8_t;
+	--				source_addr_mode: in uint8_t) return uint16_t;
+	--end protected;
+	
+	type Status_t is (
+		SUCCESS,
+		READ_ONLY,
+		UNSUPPORTED_ATTRIBUTE,
+		TRANSACTION_OVERFLOW,
+		TRANSACTION_EXPIRED,
+		CHANNEL_ACCESS_FAILURE,
+		NO_ACK,
+		INVALID_PARAMETER,
+		UNSUPPORTED_SECURITY,
+		FRAME_TOO_LONG,
+		COUNTER_ERROR,
+		UNAVAILABLE_KEY,
+		NO_SHORT_ADDRESS,
+		SUPERFRAME_OVERLAP,
+		TRACKING_OFF,
+		INVALID_PARAMETER,
+		COUNTER_ERROR,
+		FRAME_TOO_LONG,
+		UNSUPPORTED_SECURITY,
+		CHANNEL_ACCESS_FAILURE
+	);
+	
+	
+	subtype IEEE_address_t is uint8x8_t;
+	
+	type PIBAttr_t is (
+		macExtendedAddress,
+		macAckWaitDuration,
+		macAssociatedPANCoord,
+		macAssociationPermit,
+		macAutoRequest,
+		macBattLifeExt,
+		macBattLifeExtPeriods,
+		macBeaconPayload,
+		macBeaconPayloadLength,
+		macBeaconOrder,
+		macBeaconTxTime,
+		macBSN,
+		macCoordExtendedAddress,
+		macCoordShortAddress,
+		macDSN,
+		macGTSPermit,
+		macMaxBE,
+		macMaxCSMABackoffs,
+		macMaxFrameTotalWaitTime,
+		macMaxFrameRetries,
+		macMinBE,
+		macLIFSPeriod,
+		macSIFSPeriod,
+		macPANId,
+		macPromiscuousMode,
+		macRangingSupported,
+		macResponseWaitTime,
+		macRxOnWhenIdle,
+		macSecurityEnabled,
+		macShortAddress,
+		macSuperframeOrder,
+		macSyncSymbolOffset,
+		macTimestampSupported,
+		macTransactionPersistenceTime,
+		macTxControlActiveDuration,
+		macTxControlPauseDuration,
+		macTxTotalDuration);
+--type macBeaconPayload_t is array (0 to aMaxBeaconPayloadLength) of uint8_t;
+	type macBeaconPayload_t is array (0 to 75) of uint8_t;
+
+	
+	type macPIB_t is record
+		macExtendedAddress : IEEE_address_t;
+		macAckWaitDuration : integer;
+		macAssociatedPANCoord : Boolean;
+		macAssociationPermit : Boolean;
+		macAutoRequest : Boolean;
+		macBattLifeExt : Boolean;
+		macBattLifeExtPeriods : integer;
+		macBeaconPayload : macBeaconPayload_t;
+		macBeaconPayloadLength : integer;
+		macBeaconOrder : integer;
+		macBeaconTxTime : integer;
+		macBSN : integer;
+		macCoordExtendedAddress : IEEE_address_t;
+		macCoordShortAddress	: integer;
+		macDSN	: integer;
+		macGTSPermit : boolean;
+		macMaxBE : integer;
+		macMaxCSMABackoffs : integer;
+		macMaxFrameTotalWaitTime : integer;
+		macMaxFrameRetries : integer;
+		macMinBE : integer;
+		macLIFSPeriod : integer;
+		macSIFSPeriod : integer;
+		macPANId : integer;
+		macPromiscuousMode : boolean;
+		macRangingSupported : boolean;
+		macResponseWaitTime : integer;
+		macRxOnWhenIdle : boolean;
+		macSecurityEnabled : boolean;
+		macShortAddress : integer;
+		macSuperframeOrder : integer;
+		macSyncSymbolOffset : integer;
+		macTimestampSupported : boolean;
+		macTransactionPersistenceTime : integer;
+		macTxControlActiveDuration: integer;
+		macTxControlPauseDuration: integer;
+		macTxTotalDuration: integer;
+	
+	end record;
+
+	
+	
+	type MLME_SET_CONFIRM_t is record
+		Status : Status_t;
+		PIBAttr : PIBAttr_t;
+	end record;
+
+	
+	
 end package;
 
 package body MAC_pack is
 	constant aMaxMACPayloadSize : integer := aMaxPHYPacketSize - aMinMPDUOverhead;
+	constant aMaxBeaconPayloadLength : integer := aMaxPHYPacketSize - aMaxBeaconOverhead;
+
+	-- type FrameControl_o body is
+		-- variable FrameControl : FrameControl_t;
+			-- --build MPDU frame control field
+		-- impure function set_frame_control (frame_type:in uint8_t;
+									-- security: in uint8_t;
+									-- frame_pending: in uint8_t;
+									-- ack_request: in uint8_t;
+									-- intra_pan: in uint8_t;
+									-- dest_addr_mode: in uint8_t;
+									-- source_addr_mode: in uint8_t) return uint16_t is 
+			-- variable fc_b1 : uint8_t;
+			-- variable fc_b2 : uint8_t;
+		-- begin
+
+		  -- fc_b1 := ( (intra_pan * 2**6) + (ack_request * 2**5) + (frame_pending * 2**4) +
+				  -- (security  * 2**3) + (frame_type) );				  
+		  -- fc_b2 := ( (source_addr_mode  * 2**6) + (dest_addr_mode  * 2**2));
+		  -- return ( (fc_b2 * 2**8 ) + (fc_b1) );
+
+		-- end function set_frame_control;
+		
+	-- end protected body;
+
+
 end package body MAC_pack;

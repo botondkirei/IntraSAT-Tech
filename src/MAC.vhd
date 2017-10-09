@@ -3,6 +3,8 @@
 -- Scope: IEEE 802.15.4 MAC implementation
 
 use work.MAC_pack.all;
+use work.MLME_SET.all;
+use work.MLME_GET.all;
 
 package MAC is
 	procedure init_MacPIB (signal mac_PIB:inout macPIB);
@@ -190,24 +192,7 @@ package body MAC is
 		path_to_MLME_SYNC_LOSS_inidication <= 0; --beacon_loss_reason
 	end procedure;
 	
-	--build MPDU frame control field
-	function set_frame_control (frame_type:in uint8_t;
-								security: in uint8_t;
-								frame_pending: in uint8_t;
-								ack_request: in uint8_t;
-								intra_pan: in uint8_t;
-								dest_addr_mode: in uint8_t;
-								source_addr_mode: in uint8_t) return uint16_t is 
-		variable fc_b1 : uint8_t;
-		variable fc_b2 : uint8_t;
-	begin
 
-  	  fc_b1 := ( (intra_pan * 2**6) + (ack_request * 2**5) + (frame_pending * 2**4) +
- 	   		  (security  * 2**3) + (frame_type) );				  
-	  fc_b2 := ( (source_addr_mode  * 2**6) + (dest_addr_mode  * 2**2));
-	  return ( (fc_b2 * 2**8 ) + (fc_b1) );
-
-	end function set_frame_control;
 
 	
 	function set_MHR_AddressingFields (mac_PIB : in macPIB_t)
@@ -221,21 +206,382 @@ package body MAC is
 		variable frame_pkt : MPDU_t;
 		
 	begin
-		frame_pkt.MHR.FrameControl := set_frame_control(TYPE_CMD,0,0,1,1,0,LONG_ADDRESS);
+		frame_pkt.MHR.FrameControl.set_frame_control(TYPE_CMD,0,0,1,1,0,LONG_ADDRESS);
 		frame_pkt.MHR.SequenceNumber := mac_PIB.macDSN;
 		mac_PIB.macDSN := mac_PIB.macDSN + 1;
 		frame_pkt.MHR.AddressingFields := set_MHR_AddressingFields(mac_PIB);
 		frame_pkt.MACPayload := DATA_REQ_FRAME;
 		frame_pkt.add_to_fifo(SendBuffer);
 		send_frame_csma;
+		
+		-- //dest_short *dest_short_ptr;
+		-- source_long *source_long_ptr;
+
+		
+		-- MPDU *frame_pkt;
+		
+		-- uint16_t frame_control;
+		
+		-- if (send_buffer_msg_in == SEND_BUFFER_SIZE)
+			-- send_buffer_msg_in=0;
+	
+		-- frame_pkt = (MPDU *) &send_buffer[send_buffer_msg_in];
+	
+	
+		-- source_long_ptr= (source_long *) &send_buffer[send_buffer_msg_in].data[0];
+	
+		-- //creation of a pointer to the association response structure
+		-- //dest_short_ptr = (dest_short *) &frame_pkt->data[0];
+		-- source_long_ptr = (source_long *) &frame_pkt->data[0];
+	
+	
+		-- frame_pkt->length = 16;							
+		-- //frame_pkt->frame_control = set_frame_control(TYPE_CMD,0,0,1,1,0,LONG_ADDRESS);   //dest | source
+		
+		-- frame_control = set_frame_control(TYPE_CMD,0,0,1,1,0,LONG_ADDRESS);
+		-- frame_pkt->frame_control1 =(uint8_t)( frame_control);
+		-- frame_pkt->frame_control2 =(uint8_t)( frame_control >> 8);
+		
+		-- frame_pkt->seq_num = mac_PIB.macDSN;
+		
+		-- mac_PIB.macDSN++;
+		
+		-- //enable retransmissions
+		-- send_buffer[send_buffer_msg_in].retransmission =1;
+		-- send_buffer[send_buffer_msg_in].indirect = 0;
+		
+		
+		-- source_long_ptr->source_PAN_identifier = mac_PIB.macPANId;
+		
+		-- source_long_ptr->source_address0 = aExtendedAddress0;//aExtendedAddress0;
+		-- source_long_ptr->source_address1 = aExtendedAddress1;
+		
+		-- //command_frame_identifier = CMD_DATA_REQUEST;
+		-- frame_pkt->data[SOURCE_LONG_LEN]=CMD_DATA_REQUEST;
+		
+		-- //increment the send buffer variables
+		-- send_buffer_count++;
+		-- send_buffer_msg_in++;
+				
+		-- post send_frame_csma();
 	end procedure;
 	
 	procedure create_beacon_request_cmd (mac_PIB : inout macPIB_t;
 										SendBuffer : out SendBuffer_t) is
 		variable frame_pkt : MPDU_t;
 	begin
-
+	
+	
+		if (send_buffer_msg_in = SEND_BUFFER_SIZE) then
+			send_buffer_msg_in<=0;
+		end if;
+	
+		--frame_pkt = (MPDU *) &send_buffer[send_buffer_msg_in];
+	
+		--mac_beacon_request= (cmd_beacon_request*) &send_buffer[send_buffer_msg_in].data;
+	
+		--frame_pkt->length = 10;							
+		
+		frame_pkt.set_frame_control(TYPE_CMD,0,0,0,0,SHORT_ADDRESS,0);
+		--frame_pkt->frame_control1 =(uint8_t)( frame_control);
+		--frame_pkt->frame_control2 =(uint8_t)( frame_control >> 8);
+		
+		frame_pkt.seq_num = mac_PIB.macDSN;
+		
+		mac_PIB.macDSN++;
+		
+		--nable retransmissions
+		send_buffer[send_buffer_msg_in].retransmission =1;
+		send_buffer[send_buffer_msg_in].indirect = 0;
+		
+		frame_pkt.destination_PAN_identifier = 0xffff;
+		
+		frame_pkt.destination_address = 0xffff;
+	
+		frame_pkt.command_frame_identifier = CMD_BEACON_REQUEST;
+		
+		
+		--increment the send buffer variables
+		send_buffer_count <=send_buffer_count+1;
+		send_buffer_msg_in<=send_buffer_msg_in;
+		
+		send_frame_csma();
+		
 	end procedure create_beacon_request_cmd;
+	
+	procedure create_gts_request_cmd (mac_PIB : inout macPIB_t;
+										gts_characteristics : uint8_t ;
+										SendBuffer : out SendBuffer_t) is
+	begin
+	
+	end procedure;
+	
+										
+	procedure build_ack(sequence : uint8_t ;
+						frame_pending : uint8_t ) is
+	begin
+	end procedure;
+						
+	procedure create_data_frame(DataFrame : DataFrame_t;
+								endBuffer : out SendBuffer_t ) is
+								
+		variable i_indirect_trans :integer:=0;
+
+		--dest_short *dest_short_ptr;
+		--dest_long *dest_long_ptr;
+		--
+		--source_short *source_short_ptr;
+		--source_long *source_long_ptr;
+
+		--//intra_pan_source_short *intra_pan_source_short_ptr;
+		--//intra_pan_source_long *intra_pan_source_long_ptr;
+		
+		--CHECK
+		variable intra_pan	: uint8_t :=0;
+		variable data_len	: uint8_t :=0;
+		
+		variable current_gts_element_count:uint8_t:=0;
+		
+		variable frame_pkt :MPDU_t;
+
+	begin
+		if (on_gts_slot > 0 ) then
+			if (PANCoordinator = 1) then
+			--setting the coordinator gts frame pointer
+				
+				--get the number of frames in the gts_slot_list
+				current_gts_element_count = gts_slot_list[15-on_gts_slot].element_count;
+				
+				--////////////printfUART("element count %i\n",gts_slot_list[15-on_gts_slot].element_count);
+				
+				if (current_gts_element_count  = GTS_SEND_BUFFER_SIZE or  available_gts_index_count = 0) then
+					--////////////printfUART("FULL\n","");
+					MCPS_DATA.confirm(0x00, MAC_TRANSACTION_OVERFLOW);
+					return;
+				else
+					--frame_pkt = (MPDU *) &gts_send_buffer[available_gts_index[available_gts_index_count]];
+				end if;
+			else
+			--setting the device gts frame pointer
+				--//////////////printfUART("start creation %i %i %i \n",gts_send_buffer_count,gts_send_buffer_msg_in,gts_send_buffer_msg_out);
+				if(gts_send_buffer_count = GTS_SEND_BUFFER_SIZE) then
+					MCPS_DATA.confirm(0x00, MAC_TRANSACTION_OVERFLOW);
+					return;
+				end if;
+				if (gts_send_buffer_msg_in = GTS_SEND_BUFFER_SIZE) then
+					gts_send_buffer_msg_in <=0;
+				
+				--frame_pkt = (MPDU *) &gts_send_buffer[gts_send_buffer_msg_in];
+			end if;
+		else
+			if ( get_txoptions_indirect_transmission(TxOptions) = 1) then
+
+				--//CREATE THE INDIRECT TRANSMISSION PACKET POINTER
+				--//check if the is enough space to store the indirect transaction
+				if (indirect_trans_count = INDIRECT_BUFFER_SIZE) then
+					MCPS_DATA.confirm(0x00, MAC_TRANSACTION_OVERFLOW);
+					--////////////printfUART("buffer full %i\n", indirect_trans_count);
+					return;
+				end if;
+				
+				for i_indirect_trans in 0 to INDIRECT_BUFFER_SIZE loop
+					if (indirect_trans_queue[i_indirect_trans].handler = 0x00) then
+						--frame_pkt = (MPDU *) &indirect_trans_queue[i_indirect_trans].frame;
+						--break;
+					end if;
+				end loop;
+			else
+				--//CREATE NORMAL TRANSMISSION PACKET POINTER
+					--//////printfUART("sb  %i\n", send_buffer_count);
+					if ((send_buffer_count +1) > SEND_BUFFER_SIZE)	then
+						return;
+				
+					if (send_buffer_msg_in = SEND_BUFFER_SIZE) then
+						send_buffer_msg_in:=0;
+			
+					--frame_pkt = (MPDU *) &send_buffer[send_buffer_msg_in];
+			end if;
+		end if;
+		
+		if (intra_pan = 0 ) then
+			if ( DstAddrMode > 1 and  SrcAddrMode > 1 ) then
+				--// Destination LONG - Source LONG	
+				if (DstAddrMode = LONG_ADDRESS and SrcAddrMode = LONG_ADDRESS) then
+					--dest_long_ptr = (dest_long *) &frame_pkt->data[0];
+					--source_long_ptr = (source_long *) &frame_pkt->data[DEST_LONG_LEN];
+					
+					frame_pkt.estination_PAN_identifier=DestPANId;
+					frame_pkt.destination_address0=DstAddr[1];
+					frame_pkt.destination_address1=DstAddr[0];
+					
+					frame_pkt.source_PAN_identifier=SrcPANId;
+					frame_pkt.source_address0=SrcAddr[1];
+					frame_pkt.source_address1=SrcAddr[0];
+					
+					data_len := 20;
+				end if;
+				
+				--// Destination SHORT - Source LONG
+				if ( DstAddrMode = SHORT_ADDRESS and SrcAddrMode = LONG_ADDRESS ) then
+					--dest_short_ptr = (dest_short *) &frame_pkt->data[0];
+					--source_long_ptr = (source_long *) &frame_pkt->data[DEST_SHORT_LEN];
+					
+					frame_pkt.estination_PAN_identifier=DestPANId;
+					frame_pkt.destination_address=(uint16_t)DstAddr[1];
+					
+					frame_pkt.ource_PAN_identifier=SrcPANId;
+					frame_pkt.source_address0=SrcAddr[1];
+					frame_pkt.source_address1=SrcAddr[0];
+					
+					data_len := 14;
+				end if;
+				--// Destination LONG - Source SHORT
+				if ( DstAddrMode = LONG_ADDRESS and SrcAddrMode = SHORT_ADDRESS ) then
+					--dest_long_ptr = (dest_long *) &frame_pkt->data[0];
+					--source_short_ptr = (source_short *) &frame_pkt->data[DEST_LONG_LEN];
+					
+					frame_pkt.destination_PAN_identifier=DestPANId;
+					frame_pkt.destination_address0=DstAddr[1];
+					frame_pkt.destination_address1=DstAddr[0];
+					
+					frame_pkt.source_PAN_identifier=SrcPANId;
+					frame_pkt.source_address=(uint16_t)SrcAddr[1];
+					
+					data_len := 14;
+				end if;
+				
+				
+				--Destination SHORT - Source SHORT
+				if ( DstAddrMode = SHORT_ADDRESS and SrcAddrMode = SHORT_ADDRESS )	then
+					--dest_short_ptr = (dest_short *) &frame_pkt->data[0];
+					--source_short_ptr = (source_short *) &frame_pkt->data[DEST_SHORT_LEN];
+					
+					frame_pkt.destination_PAN_identifier=DestPANId;
+					frame_pkt.estination_address=(uint16_t)DstAddr[1];
+					
+					frame_pkt.source_PAN_identifier=SrcPANId;
+					frame_pkt.source_address=(uint16_t)SrcAddr[1];
+					
+					data_len := 8;
+				end if;
+			end if;
+			
+			if ( DstAddrMode = 0 and SrcAddrMode > 1 ) then
+				if (SrcAddrMode = LONG_ADDRESS) then
+				--//Source LONG
+					--source_long_ptr = (source_long *) &frame_pkt->data[0];
+					
+					frame_pkt.source_PAN_identifier=SrcPANId;
+					frame_pkt.source_address0=SrcAddr[1];
+					frame_pkt.ource_address1=SrcAddr[0];
+					
+					data_len := 10;
+				else
+				--//Source SHORT
+
+					--source_short_ptr = (source_short *) &frame_pkt->data[0];
+					
+					frame_pkt.source_PAN_identifier=SrcPANId;
+					frame_pkt.ource_address=(uint16_t)SrcAddr[1];
+					
+					data_len := 4;
+				end if;
+			end if;
+			
+			if ( DstAddrMode > 1 and SrcAddrMode = 0 ) then
+				if (DstAddrMode = LONG_ADDRESS) then
+				--//Destination LONG
+					--dest_long_ptr = (dest_long *) &frame_pkt->data[0];
+			
+					frame_pkt.destination_PAN_identifier=DestPANId;
+					frame_pkt.destination_address0=DstAddr[1];
+					frame_pkt.destination_address1=DstAddr[0];
+
+					data_len := 10;
+				else
+				--//Destination SHORT
+					--dest_short_ptr = (dest_short *) &frame_pkt->data[0];
+
+					frame_pkt.destination_PAN_identifier=DestPANId;
+					frame_pkt.destination_address=(uint16_t)DstAddr[1];
+					
+					data_len := 4;
+				end if;
+			end if;
+		else
+		--intra_pan == 1
+		end if;
+		
+		--memcpy(&frame_pkt->data[data_len],&msdu[0],msduLength*sizeof(uint8_t));
+		
+		if(on_gts_slot > 0) then
+			--//preparing a GTS transmission
+			
+			--//////////////printfUART("GTS send slt: %i count %i %u\n",on_gts_slot,gts_slot_list[15-on_gts_slot].element_count,mac_PIB.macDSN);
+			frame_pkt.length = data_len + msduLength + MPDU_HEADER_LEN;
+			
+			frame_pkt.set_frame_control(TYPE_DATA,0,0,1,intra_pan,DstAddrMode,SrcAddrMode);
+			
+			frame_pkt.seq_num = mac_PIB.macDSN;
+			mac_PIB.macDSN++;
+						
+			--ADDING DATA TO THE GTS BUFFER
+			if (PANCoordinator = 1) then
+				--gts_slot_list[15-on_gts_slot].element_count ++;
+				--gts_slot_list[15-on_gts_slot].gts_send_frame_index[gts_slot_list[15-on_gts_slot].element_in] = available_gts_index[available_gts_index_count];
+				--//gts_slot_list[15-on_gts_slot].length = frame_pkt->length;
+				--
+				--gts_slot_list[15-on_gts_slot].element_in ++;
+				
+				if (gts_slot_list[15-on_gts_slot].element_in = GTS_SEND_BUFFER_SIZE) then
+					gts_slot_list[15-on_gts_slot].element_in :=0;
+				
+				available_gts_index_count := vailable_gts_index_count -1;
+				
+				--//current_gts_pending_frame++;
+			else
+				gts_send_buffer_count :=gts_send_buffer_count+1;
+				gts_send_buffer_msg_in:=gts_send_buffer_msg_in+1;
+				--//////////////printfUART("end c %i %i %i \n",gts_send_buffer_count,gts_send_buffer_msg_in,gts_send_buffer_msg_out);
+			end if;
+		else
+			--////////////printfUART("CSMA send %i\n", get_txoptions_ack(TxOptions));
+			frame_pkt.length = data_len + msduLength + MPDU_HEADER_LEN;
+			//frame_pkt->frame_control = set_frame_control(TYPE_DATA,0,0,get_txoptions_ack(TxOptions),intra_pan,DstAddrMode,SrcAddrMode);
+			
+			frame_pkt.set_frame_control(TYPE_DATA,0,0,get_txoptions_ack(TxOptions),intra_pan,DstAddrMode,SrcAddrMode);
+
+			
+			frame_pkt.seq_num = mac_PIB.macDSN;
+			
+			--////////printfUART("sqn %i\n", mac_PIB.macDSN);
+			
+			mac_PIB.macDSN++;
+			
+			if ( get_txoptions_indirect_transmission(TxOptions) = 1) then
+					indirect_trans_queue[i_indirect_trans].handler = indirect_trans_count + 1;
+					indirect_trans_queue[i_indirect_trans].transaction_persistent_time = 0x0000;
+	
+					indirect_trans_count:=indirect_trans_count+1;
+	
+					--////////////printfUART("ADDED HDL: %i ADDR: %i\n",indirect_trans_count,DstAddr[1]); 
+			else
+					--enable retransmissions
+					send_buffer[send_buffer_msg_in].retransmission = 1;
+					send_buffer[send_buffer_msg_in].indirect = 0;
+					
+					send_buffer_count:=send_buffer_count+1;
+					
+					send_buffer_msg_in:=send_buffer_msg_in+1;
+					
+					send_frame_csma();
+			end if;
+			
+		end if;	
+		
+		
+	
+	end procedure;								
 	
 		--Association commands implementations
 	
@@ -243,14 +589,178 @@ package body MAC is
 											CoordPANId : uint16_t;
 											CoordAddress : uint32_t;
 											CapabilityInformation : uint8_t;
-											SendBuffer : out SendBuffer_t );
+											SendBuffer : out SendBuffer_t ) is
+	begin
+		-- cmd_association_request *cmd_association_request_ptr;
+		-- dest_short *dest_short_ptr;
+		-- source_long *source_long_ptr;
+	
+		-- MPDU *frame_pkt=0;
+		
+		-- uint16_t frame_control;
+		
+		-- if (send_buffer_msg_in == SEND_BUFFER_SIZE)
+			-- send_buffer_msg_in=0;
+	
+		-- frame_pkt = (MPDU *) &send_buffer[send_buffer_msg_in];
+		
+		-- //creation of a pointer to the association response structure
+		-- dest_short_ptr = (dest_short *) &frame_pkt->data[0];
+		-- source_long_ptr = (source_long *) &frame_pkt->data[DEST_SHORT_LEN];
+		
+		-- cmd_association_request_ptr = (cmd_association_request *) &send_buffer[send_buffer_msg_in].data[DEST_SHORT_LEN + SOURCE_LONG_LEN];
+		
+		-- frame_pkt->length = 21;
+		-- //frame_pkt->frame_control = set_frame_control(TYPE_CMD,0,0,1,0,SHORT_ADDRESS,LONG_ADDRESS);
+		
+		-- frame_control = set_frame_control(TYPE_CMD,0,0,1,0,SHORT_ADDRESS,LONG_ADDRESS);
+		-- frame_pkt->frame_control1 =(uint8_t)( frame_control);
+		-- frame_pkt->frame_control2 =(uint8_t)( frame_control >> 8);
+		
+		-- frame_pkt->seq_num = mac_PIB.macDSN;
+		
+		-- association_cmd_seq_num =  mac_PIB.macDSN;
+		
+		-- mac_PIB.macDSN++;
+		
+		-- //enable retransmissions
+		-- send_buffer[send_buffer_msg_in].retransmission =1;
+		-- send_buffer[send_buffer_msg_in].indirect = 0;
+		
+		-- dest_short_ptr->destination_PAN_identifier = CoordPANId; //mac_PIB.macPANId;
+		
+		-- if (CoordAddrMode == SHORT_ADDRESS )
+		-- {
+			-- dest_short_ptr->destination_address = (uint16_t)(CoordAddress[1] & 0x000000ff) ;  //mac_PIB.macPANId;
+		-- }
+		-- else
+		-- {
+		-- //CHECK
+		
+		-- //implement the long address version
+		
+		-- }
+		
+		-- source_long_ptr->source_PAN_identifier = 0xffff;
+		
+		-- source_long_ptr->source_address0 = aExtendedAddress0;
+		-- source_long_ptr->source_address1 = aExtendedAddress1;
+		
+		-- cmd_association_request_ptr->command_frame_identifier = CMD_ASSOCIATION_REQUEST;
+		
+		-- cmd_association_request_ptr->capability_information = CapabilityInformation;
+
+		-- //increment the send buffer variables
+		-- send_buffer_count++;
+		-- send_buffer_msg_in++;
+		
+		-- pending_request_data=1;
+		
+		-- //////printfUART("Association request %i %i \n", send_buffer_count,send_buffer_msg_in);
+		
+		
+		-- post send_frame_csma();
+
+	end procedure;
 											
 
 	function create_association_response_cmd( DeviceAddress: uint32_t;
 											 shortaddress: uint16_t;
 											 status : uint8_t;
 											 SendBuffer : out SendBuffer_t) 
-											 return error_t;
+											 return error_t is
+	begin
+		-- cmd_association_response *mac_association_response;
+		-- dest_long *dest_long_ptr;
+		-- source_long *source_long_ptr;
+		
+		-- int i=0;
+		
+		-- MPDU *frame_pkt=0;
+		
+		-- uint16_t frame_control;
+		
+		-- //atomic{
+		-- /*
+				-- if (send_buffer_msg_in == SEND_BUFFER_SIZE)
+				-- send_buffer_msg_in=0;
+		
+			-- frame_pkt = (MPDU *) &send_buffer[send_buffer_msg_in];
+		-- */
+		
+		-- //check if the is enough space to store the indirect transaction
+		-- if (indirect_trans_count == INDIRECT_BUFFER_SIZE)
+		-- {
+			-- //printfUART("i full","");
+			-- return MAC_TRANSACTION_OVERFLOW;
+		-- }
+		
+		-- for(i=0;i<INDIRECT_BUFFER_SIZE;i++)
+		-- {
+			-- if (indirect_trans_queue[i].handler == 0x00)
+			-- {
+				-- //memcpy(&indirect_trans_queue[i].frame,frame_ptr,sizeof(MPDU));
+				-- frame_pkt = (MPDU *) &indirect_trans_queue[i].frame;
+				-- //printfUART("found slot","");
+				-- break;
+			-- }
+		-- }
+		
+		-- //creation of a pointer to the association response structure
+		-- dest_long_ptr = (dest_long *) &frame_pkt->data[0];
+		-- source_long_ptr = (source_long *) &frame_pkt->data[DEST_LONG_LEN];
+		
+		-- mac_association_response = (cmd_association_response *) &frame_pkt->data[DEST_LONG_LEN + SOURCE_LONG_LEN];									
+		
+		-- frame_pkt->length = 29;
+		-- //frame_pkt->frame_control = set_frame_control(TYPE_CMD,0,0,1,0,LONG_ADDRESS,LONG_ADDRESS);
+		
+		-- frame_control = set_frame_control(TYPE_CMD,0,0,1,0,LONG_ADDRESS,LONG_ADDRESS);
+		
+		-- frame_pkt->frame_control1 =(uint8_t)( frame_control);
+		-- frame_pkt->frame_control2 =(uint8_t)( frame_control >> 8);
+		
+		-- frame_pkt->seq_num = mac_PIB.macDSN;
+		-- mac_PIB.macDSN++;
+		
+		-- dest_long_ptr->destination_PAN_identifier = mac_PIB.macPANId;
+
+		-- dest_long_ptr->destination_address0 = DeviceAddress[1];
+		-- dest_long_ptr->destination_address1 = DeviceAddress[0];
+		
+		-- source_long_ptr->source_PAN_identifier = mac_PIB.macPANId;
+		
+		-- source_long_ptr->source_address0 = aExtendedAddress0;
+		-- source_long_ptr->source_address1 = aExtendedAddress1;
+
+		-- mac_association_response->command_frame_identifier = CMD_ASSOCIATION_RESPONSE;
+		
+		-- //mac_association_response->short_address = shortaddress;
+		-- mac_association_response->short_address1 = (uint8_t)(shortaddress);
+		-- mac_association_response->short_address2 = (uint8_t)(shortaddress >> 8);
+
+
+		-- mac_association_response->association_status = status;
+	-- /*
+			-- //increment the send buffer variables
+			-- send_buffer_count++;
+			-- send_buffer_msg_in++;
+				-- }	
+			-- post send_frame_csma();
+	-- */
+		-- //printfUART("ASS RESP S: %i\n",shortaddress); 
+
+		-- indirect_trans_queue[i].handler = indirect_trans_count+1;
+
+		-- indirect_trans_queue[i].transaction_persistent_time = 0x0000;
+		
+		-- indirect_trans_count++;
+		
+		-- //printfUART("IAD\n", "");
+
+		-- return MAC_SUCCESS;
+		
+	end function;
 											 
 	procedure create_disassociation_notification_cmd( DeviceAddress: uint32_t;
 													 disassociation_reason : uint8_t;
@@ -1491,12 +2001,13 @@ package body MAC is
 
 
 
-	-- entity MAC_core is
+	 --entity MAC_core is
 		-- generic (FFD_not_RFD: boolean := TRUE);
 		-- port ( MCPS_DATA : inout MCPS_DATA_t);
-	-- end entity MAC_core;
+	 --end entity MAC_core;
 
-	-- architecture behavioral of MAC is
+	 --architecture behavioral of MAC_core is
+
 		-- signal aExtendedAddress0 : uint32_t;
 		-- signal aExtendedAddress1 : uint32_t;
 		-- signal mac_PIB : macPIB;
